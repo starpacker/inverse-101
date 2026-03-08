@@ -65,7 +65,13 @@ class VLBIForwardModel:
             uv_coords[:, 0:1] * l_flat[np.newaxis, :] +
             uv_coords[:, 1:2] * m_flat[np.newaxis, :]
         )
-        self.A = np.exp(phase) * (pixel_size_rad ** 2)   # (M, N²), complex128
+        # Note: we omit the Δθ² solid-angle factor from A.
+        # For normalised images (x sums to 1), Δθ² is a global scale that:
+        #   - cancels in CLEAN (dirty/PSF is scale-invariant)
+        #   - only shifts the absolute χ² scale in RML (absorbed into λ)
+        # Including Δθ² ≈ (2μas)² ≈ 9e-46 rad² causes values of ~1e-42 in
+        # A^H A, leading to numerical underflow in double precision.
+        self.A = np.exp(phase)   # (M, N²), complex128
 
     # ──────────────────────────────────────────────────────────────────────
     # Core operators

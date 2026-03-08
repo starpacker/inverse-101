@@ -93,6 +93,14 @@ class CLEANReconstructor:
     clean_beam_fwhm : float or None
         FWHM of the restoring Gaussian beam in pixels.
         If None, estimated automatically from the PSF main lobe.
+    support_radius : float or None
+        Radius (in pixels from image centre) within which CLEAN may place
+        components. This CLEAN window is critical for sparse arrays like EHT
+        whose PSF has sidelobes comparable in height to the main lobe
+        (~98% for EHT/M87*). Without a support constraint the algorithm
+        diverges because every subtraction creates new false peaks in the
+        sidelobe region. Set to the expected source size + a margin.
+        If None, the full image is searched (only safe for dense uv-coverage).
 
     Reference
     ---------
@@ -101,15 +109,17 @@ class CLEANReconstructor:
 
     def __init__(
         self,
-        gain: float = 0.1,
-        n_iter: int = 1000,
-        threshold: float = 5e-3,
+        gain: float = 0.05,
+        n_iter: int = 50,
+        threshold: float = 1e-4,
         clean_beam_fwhm: float = None,
+        support_radius: float = None,
     ):
         self.gain = gain
         self.n_iter = n_iter
         self.threshold = threshold
         self.clean_beam_fwhm = clean_beam_fwhm
+        self.support_radius = support_radius
 
     def reconstruct(self, model, vis: np.ndarray, noise_std: float = 1.0) -> np.ndarray:
         N = model.N
@@ -119,15 +129,32 @@ class CLEANReconstructor:
         components = np.zeros((N, N))
         residual = dirty.copy()
         psf_center = np.array([N // 2, N // 2])
-        initial_peak = np.abs(residual).max()
+        initial_peak = residual.max()
         stop_level = self.threshold * initial_peak
 
+        # ── Build support mask ────────────────────────────────────────────
+        # Only search for CLEAN components within the support region.
+        # For EHT-like sparse arrays this is mandatory: PSF sidelobes can
+        # reach ~98% of the main lobe, causing divergence without a window.
+        if self.support_radius is not None:
+            ii, jj = np.ogrid[:N, :N]
+            dist = np.sqrt((ii - N // 2) ** 2 + (jj - N // 2) ** 2)
+            support = dist <= self.support_radius
+        else:
+            support = np.ones((N, N), dtype=bool)
+
+        masked_residual = np.where(support, residual, -np.inf)
+
         for _ in range(self.n_iter):
-            if np.abs(residual).max() < stop_level:
+            if masked_residual.max() < stop_level:
                 break
 
-            peak_idx = np.unravel_index(np.abs(residual).argmax(), (N, N))
+            # Only subtract from positive peaks within the support window.
+            peak_idx = np.unravel_index(masked_residual.argmax(), (N, N))
             peak_val = residual[peak_idx]
+
+            if peak_val <= 0:
+                break
 
             # Accumulate delta-function component
             components[peak_idx] += self.gain * peak_val
@@ -137,6 +164,8 @@ class CLEANReconstructor:
                      int(peak_idx[1]) - psf_center[1])
             psf_shifted = np.roll(psf, shift, axis=(0, 1))
             residual -= self.gain * peak_val * psf_shifted
+
+            masked_residual = np.where(support, residual, -np.inf)
 
         # ── Restore ──────────────────────────────────────────────────────
         fwhm = self.clean_beam_fwhm if self.clean_beam_fwhm is not None \
