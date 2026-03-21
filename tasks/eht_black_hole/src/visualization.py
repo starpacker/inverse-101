@@ -148,14 +148,13 @@ def plot_comparison(
     if figsize is None:
         figsize = (4.2 * n, 4.2)
 
-    vmax = max(p.max() for p in panels)
     fig, axes = plt.subplots(1, n, figsize=figsize)
     if n == 1:
         axes = [axes]
 
     for ax, img, title in zip(axes, panels, titles):
         plot_image(img, title=title, ax=ax, cmap=cmap,
-                   pixel_size_uas=pixel_size_uas, vmin=0, vmax=vmax)
+                   pixel_size_uas=pixel_size_uas, vmin=0, vmax=img.max())
 
     plt.tight_layout()
     return fig
@@ -193,9 +192,7 @@ def plot_summary_panel(
     # ── Dirty image ───────────────────────────────────────────────────────
     dirty = model.dirty_image(vis_noisy)
     ax_dirty = fig.add_subplot(gs[0, 1])
-    vmax = max(dirty.max(), *(r.max() for r in reconstructions.values()),
-               ground_truth.max() if ground_truth is not None else 0)
-    plot_image(dirty, title="Dirty Image", ax=ax_dirty, vmin=0, vmax=vmax,
+    plot_image(dirty, title="Dirty Image", ax=ax_dirty, vmin=0, vmax=dirty.max(),
                pixel_size_uas=pixel_size_uas)
 
     # ── Ground truth and reconstructions ──────────────────────────────────
@@ -203,7 +200,7 @@ def plot_summary_panel(
     if ground_truth is not None:
         ax = fig.add_subplot(gs[0, col])
         plot_image(ground_truth, title="Ground Truth", ax=ax,
-                   vmin=0, vmax=vmax, pixel_size_uas=pixel_size_uas)
+                   vmin=0, vmax=ground_truth.max(), pixel_size_uas=pixel_size_uas)
         col += 1
 
     for name, img in reconstructions.items():
@@ -213,7 +210,7 @@ def plot_summary_panel(
             title = f"{name}\nNRMSE={m.get('nrmse', 0):.3f}"
         else:
             title = name
-        plot_image(img, title=title, ax=ax, vmin=0, vmax=vmax,
+        plot_image(img, title=title, ax=ax, vmin=0, vmax=img.max(),
                    pixel_size_uas=pixel_size_uas)
         col += 1
 

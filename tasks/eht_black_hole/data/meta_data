@@ -1,0 +1,11 @@
+{
+  "N": 64,
+  "pixel_size_uas": 2.0,
+  "pixel_size_rad": 9.69627362219072e-12,
+  "noise_std": 0.026760523925120815,
+  "freq_ghz": 230.0,
+  "source_dec_deg": 12.39,
+  "obs_duration_hours": 6.0,
+  "n_baselines": 540,
+  "snr": 20.0
+}
