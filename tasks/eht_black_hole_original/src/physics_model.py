@@ -231,9 +231,9 @@ class ClosureForwardModel:
         grad = np.zeros(self.N * self.N)
         for leg in range(3):
             v_leg = v_legs[leg]
-            pt = pref / np.conj(v_leg)  # (N_tri,)
+            pt = pref / v_leg  # (N_tri,)
             if self._tri_conj[leg].any():
-                pt = np.where(self._tri_conj[leg], np.conj(pt), pt)
+                pt = np.where(self._tri_conj[leg], -np.conj(pt), pt)
             grad += np.imag(pt @ self._tri_A[leg])  # sum over triangles → (N²,)
 
         grad *= (-2.0 / N_cp)
@@ -321,7 +321,7 @@ class ClosureForwardModel:
 
         grad = np.zeros(self.N * self.N)
         for leg in range(4):
-            pt = signs[leg] * pp / np.conj(v_legs[leg])
+            pt = signs[leg] * pp / v_legs[leg]
             grad += np.real(pt @ self._quad_A[leg])
 
         grad *= (-2.0 / N_ca)

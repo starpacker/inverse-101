@@ -1,113 +1,11 @@
 nohup: ignoring input
 =============================================
-2026-03-22 01:30:45 Overnight run started
+2026-03-22 13:05:05 Overnight run started
 =============================================
 
 =============================================
-2026-03-22 01:30:45 TASK 01: eht_black_hole_original
+2026-03-22 13:05:05 TASK 01: eht_black_hole_original
 =============================================
-2026-03-22 01:30:45 Starting claude -p for eht_black_hole_original (budget=$50.00)...
-2026-03-22 01:51:45 Claude completed eht_black_hole_original successfully
-2026-03-22 01:51:45 Committing changes for eht_black_hole_original...
-[main fbf01ba] Clean task: eht_black_hole_original
- 106 files changed, 28525 insertions(+), 1809 deletions(-)
- create mode 100644 CLAUDE.md
- create mode 100644 evaluation_harness/README.md
- create mode 100644 overnight/logs/01_eht_black_hole_original.log
- create mode 100644 overnight/overnight.log
- create mode 100644 overnight/overnight.pid
- create mode 100644 overnight/prompts/01_eht_black_hole_original.md
- create mode 100644 overnight/prompts/02_eht_black_hole_dynamic.md
- create mode 100644 overnight/prompts/03_eht_black_hole_UQ.md
- create mode 100644 overnight/prompts/04_eht_black_hole_feature_extraction.md
- create mode 100644 overnight/prompts/05_eht_black_hole_tomography.md
- create mode 100755 overnight/run_overnight.sh
- create mode 100644 skills/README.md
- rewrite tasks/eht_black_hole/README.md (91%)
- delete mode 100644 tasks/eht_black_hole/data/gt.fits
- create mode 100644 tasks/eht_black_hole/data/meta_data
- delete mode 100644 tasks/eht_black_hole/data/obs.uvfits
- create mode 100644 tasks/eht_black_hole/data/raw_data.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/physics_model/add_noise.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/physics_model/adjoint.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/physics_model/dirty_image.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/physics_model/forward.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/physics_model/init.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/physics_model/psf.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/preprocessing/load_metadata.json
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/preprocessing/load_observation.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/preprocessing/prepare_data.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/preprocessing/prepare_data_meta.json
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/solvers/clean_reconstructor.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/solvers/dirty_image_reconstructor.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/solvers/l1_sparsity_regularizer.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/solvers/max_entropy_regularizer.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/solvers/rml_solver_mem.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/solvers/rml_solver_tv.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/solvers/tv_regularizer.npz
- create mode 100644 tasks/eht_black_hole/evaluation/fixtures/visualization/compute_metrics.npz
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/clean.npy
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/dirty_from_model.npy
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/dirty_image.npy
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/ground_truth.npy
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/metrics.json
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/psf.npy
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/rml_mem.npy
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/rml_tv.npy
- create mode 100644 tasks/eht_black_hole/evaluation/reference_outputs/vis_forward.npy
- create mode 100644 tasks/eht_black_hole/evaluation/tests/__pycache__/test_end_to_end.cpython-311-pytest-9.0.2.pyc
- create mode 100644 tasks/eht_black_hole/evaluation/tests/__pycache__/test_physics_model.cpython-311-pytest-9.0.2.pyc
- create mode 100644 tasks/eht_black_hole/evaluation/tests/__pycache__/test_preprocessing.cpython-311-pytest-9.0.2.pyc
- create mode 100644 tasks/eht_black_hole/evaluation/tests/__pycache__/test_solvers.cpython-311-pytest-9.0.2.pyc
- create mode 100644 tasks/eht_black_hole/evaluation/tests/__pycache__/test_visualization.cpython-311-pytest-9.0.2.pyc
- create mode 100644 tasks/eht_black_hole/evaluation/tests/test_end_to_end.py
- create mode 100644 tasks/eht_black_hole/evaluation/tests/test_physics_model.py
- create mode 100644 tasks/eht_black_hole/evaluation/tests/test_preprocessing.py
- create mode 100644 tasks/eht_black_hole/evaluation/tests/test_solvers.py
- create mode 100644 tasks/eht_black_hole/evaluation/tests/test_visualization.py
- create mode 100644 tasks/eht_black_hole/main.py
- create mode 100644 tasks/eht_black_hole/notebooks/.ipynb_checkpoints/eht_black_hole-checkpoint.ipynb
- delete mode 100644 tasks/eht_black_hole/notebooks/eht_real_data.ipynb
- create mode 100644 tasks/eht_black_hole/output/reconstruction.npy
- create mode 100644 tasks/eht_black_hole/plan/approach.md
- create mode 100644 tasks/eht_black_hole/plan/design.md
- rewrite tasks/eht_black_hole/src/__pycache__/__init__.cpython-311.pyc (90%)
- create mode 100644 tasks/eht_black_hole/src/__pycache__/generate_data.cpython-311.pyc
- rename tasks/eht_black_hole/src/__pycache__/{forward_model.cpython-311.pyc => physics_model.cpython-311.pyc} (82%)
- create mode 100644 tasks/eht_black_hole/src/__pycache__/preprocessing.cpython-311.pyc
- rename tasks/eht_black_hole/{ => src}/generate_data.py (99%)
- rename tasks/eht_black_hole/src/{forward_model.py => physics_model.py} (94%)
- create mode 100644 tasks/eht_black_hole/src/preprocessing.py
- create mode 100644 tasks/eht_black_hole_UQ/2010.14462v2.pdf
- create mode 100644 tasks/eht_black_hole_UQ/reference_website_github.md
- create mode 100644 tasks/eht_black_hole_dynamic/1711.01357v2.pdf
- create mode 100644 tasks/eht_black_hole_dynamic/reference_website_github.md
- create mode 100644 tasks/eht_black_hole_feature_extraction/Sun_2022_ApJ_932_99.pdf
- create mode 100644 tasks/eht_black_hole_feature_extraction/reference_website_github.md
- create mode 100644 tasks/eht_black_hole_original/Bouman_Computational_Imaging_for_CVPR_2016_paper.pdf
- create mode 100644 tasks/eht_black_hole_original/Chael_2018_ApJ_857_23.pdf
- create mode 100644 tasks/eht_black_hole_original/README.md
- create mode 100644 tasks/eht_black_hole_original/data/meta_data
- create mode 100644 tasks/eht_black_hole_original/data/raw_data.npz
- create mode 100644 tasks/eht_black_hole_original/evaluation/reference_outputs/ground_truth.npy
- create mode 100644 tasks/eht_black_hole_original/main.py
- create mode 100644 tasks/eht_black_hole_original/plan/approach.md
- create mode 100644 tasks/eht_black_hole_original/plan/design.md
- create mode 100644 tasks/eht_black_hole_original/reference_website_github.md
- create mode 100644 tasks/eht_black_hole_original/requirements.txt
- create mode 100644 tasks/eht_black_hole_original/src/__init__.py
- create mode 100644 tasks/eht_black_hole_original/src/__pycache__/__init__.cpython-311.pyc
- create mode 100644 tasks/eht_black_hole_original/src/__pycache__/generate_data.cpython-311.pyc
- create mode 100644 tasks/eht_black_hole_original/src/__pycache__/physics_model.cpython-311.pyc
- create mode 100644 tasks/eht_black_hole_original/src/__pycache__/preprocessing.cpython-311.pyc
- create mode 100644 tasks/eht_black_hole_original/src/__pycache__/solvers.cpython-311.pyc
- create mode 100644 tasks/eht_black_hole_original/src/__pycache__/visualization.cpython-311.pyc
- create mode 100644 tasks/eht_black_hole_original/src/generate_data.py
- create mode 100644 tasks/eht_black_hole_original/src/physics_model.py
- create mode 100644 tasks/eht_black_hole_original/src/preprocessing.py
- create mode 100644 tasks/eht_black_hole_original/src/solvers.py
- create mode 100644 tasks/eht_black_hole_original/src/visualization.py
- create mode 100644 tasks/eht_black_hole_tomography/CVPR2022_main.pdf
- create mode 100644 tasks/eht_black_hole_tomography/reference_website_github.md
- create mode 100644 tasks/eht_black_hole_tomography/s41550-024-02238-3.pdf
-2026-03-22 01:51:46 Pushing to origin/main...
+2026-03-22 13:05:05 Starting claude -p for eht_black_hole_original (budget=$50.00)...
+2026-03-22 13:14:08 Claude completed eht_black_hole_original successfully
+2026-03-22 13:14:08 Committing changes for eht_black_hole_original...

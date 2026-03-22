@@ -1,2 +1,1 @@
-Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.
-Now let me generate the reference outputs and test fixtures by running the pipeline, then create the tests. I'll write a fixture generation script:
+Now I have a complete picture of the API. Let me create the tutorial notebook.

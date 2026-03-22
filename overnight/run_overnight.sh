@@ -90,6 +90,7 @@ $task_prompt"
         --allowedTools "Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Agent" \
         --max-budget-usd "$max_budget" \
         --verbose \
+        < /dev/null \
         > "$LOG_DIR/${task_num}_${task_name}.log" 2>&1; then
         echo "$(ts) Claude completed $task_name successfully"
     else
@@ -126,21 +127,21 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>" || true
 run_task "01" "eht_black_hole_original" \
     "$PROMPT_DIR/01_eht_black_hole_original.md" 50.00
 
-# Task 2: Dynamic reconstruction StarWarps (CPU-only)
-run_task "02" "eht_black_hole_dynamic" \
-    "$PROMPT_DIR/02_eht_black_hole_dynamic.md" 50.00
+# Task 2: Dynamic reconstruction StarWarps (CPU-only) — SKIPPED
+# run_task "02" "eht_black_hole_dynamic" \
+#     "$PROMPT_DIR/02_eht_black_hole_dynamic.md" 50.00
 
 # Task 3: Deep Probabilistic Imaging (GPU)
 run_task "03" "eht_black_hole_UQ" \
     "$PROMPT_DIR/03_eht_black_hole_UQ.md" 50.00
 
-# Task 4: α-DPI Feature Extraction (GPU)
-run_task "04" "eht_black_hole_feature_extraction" \
-    "$PROMPT_DIR/04_eht_black_hole_feature_extraction.md" 50.00
+# Task 4: α-DPI Feature Extraction (GPU) — SKIPPED
+# run_task "04" "eht_black_hole_feature_extraction" \
+#     "$PROMPT_DIR/04_eht_black_hole_feature_extraction.md" 50.00
 
-# Task 5: BH-NeRF Tomography (GPU, most complex)
-run_task "05" "eht_black_hole_tomography" \
-    "$PROMPT_DIR/05_eht_black_hole_tomography.md" 50.00
+# Task 5: BH-NeRF Tomography (GPU, most complex) — SKIPPED
+# run_task "05" "eht_black_hole_tomography" \
+#     "$PROMPT_DIR/05_eht_black_hole_tomography.md" 50.00
 
 # -----------------------------------------------------------------------------
 # Final summary
