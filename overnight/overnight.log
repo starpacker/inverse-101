@@ -9,3 +9,62 @@ nohup: ignoring input
 2026-03-22 13:05:05 Starting claude -p for eht_black_hole_original (budget=$50.00)...
 2026-03-22 13:14:08 Claude completed eht_black_hole_original successfully
 2026-03-22 13:14:08 Committing changes for eht_black_hole_original...
+[main 6ccc050] Clean task: eht_black_hole_original
+ 51 files changed, 1411 insertions(+), 161 deletions(-)
+ rewrite overnight/overnight.log (97%)
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/adjoint.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/closure_phase_chisq.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/closure_phase_chisq_grad.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/dirty_image.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/forward.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/init.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/log_closure_amp_chisq.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/log_closure_amp_chisq_grad.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/model_closure_phases.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/model_log_closure_amplitudes.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/psf.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/visibility_chisq.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/physics_model/visibility_chisq_grad.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/closure_amplitude_sigma.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/closure_phase_sigma.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/compute_closure_phases.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/compute_log_closure_amplitudes.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/find_quadrangles.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/find_triangles.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/load_metadata.json
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/load_observation.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/prepare_data.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/preprocessing/prepare_data_meta.json
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/solvers/closure_phase_only_solver.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/solvers/closure_phase_plus_amp_solver.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/solvers/l1_sparsity_regularizer.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/solvers/max_entropy_regularizer.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/solvers/tv_regularizer.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/solvers/visibility_rml_solver.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/fixtures/visualization/compute_metrics.npz
+ create mode 100644 tasks/eht_black_hole_original/evaluation/reference_outputs/cpca_tv.npy
+ create mode 100644 tasks/eht_black_hole_original/evaluation/reference_outputs/metrics.json
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/__pycache__/test_end_to_end.cpython-311-pytest-9.0.2.pyc
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/__pycache__/test_physics_model.cpython-311-pytest-9.0.2.pyc
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/__pycache__/test_preprocessing.cpython-311-pytest-9.0.2.pyc
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/__pycache__/test_solvers.cpython-311-pytest-9.0.2.pyc
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/__pycache__/test_visualization.cpython-311-pytest-9.0.2.pyc
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/test_end_to_end.py
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/test_physics_model.py
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/test_preprocessing.py
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/test_solvers.py
+ create mode 100644 tasks/eht_black_hole_original/evaluation/tests/test_visualization.py
+ create mode 100644 tasks/eht_black_hole_original/generate_fixtures.py
+ create mode 100644 tasks/eht_black_hole_original/output/reconstruction.npy
+2026-03-22 13:14:09 Pushing to origin/main...
+To github.com:HeSunPU/imaging-101.git
+   3cf8985..6ccc050  main -> main
+2026-03-22 13:14:15 TASK 01: eht_black_hole_original DONE
+
+
+=============================================
+2026-03-22 13:14:15 TASK 03: eht_black_hole_UQ
+=============================================
+2026-03-22 13:14:15 Starting claude -p for eht_black_hole_UQ (budget=$50.00)...
+2026-03-22 13:14:34 Claude completed eht_black_hole_UQ successfully
+2026-03-22 13:14:34 Committing changes for eht_black_hole_UQ...
