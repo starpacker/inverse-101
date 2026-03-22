@@ -37,10 +37,11 @@ tasks/<task_name>/
 │   ├── visualization.py       # Plotting utilities and metrics
 │   └── generate_data.py       # Optional: synthetic data generation
 ├── notebooks/
-│   └── <task_name>.ipynb      # End-to-end tutorial
+│   └── <task_name>.ipynb      # End-to-end tutorial (loads pretrained model)
 └── evaluation/
-    ├── reference_outputs/     # Ground truth, reference reconstructions, metrics.json
-    └── tests/                 # Unit tests (per-function) and integration tests (end-to-end)
+    ├── reference_outputs/     # Pretrained checkpoints, samples, ground truth, metrics.json
+    ├── fixtures/              # Per-function test fixtures
+    └── tests/                 # Unit tests, parity tests, integration tests
 ```
 
 ## Evaluation Modes
@@ -54,47 +55,33 @@ tasks/<task_name>/
 
 ## Commands
 
-### Install dependencies (per-task)
 ```bash
-pip install -r tasks/eht_black_hole/requirements.txt
+cd tasks/<task_name>
+pip install -r requirements.txt          # Install dependencies
+python main.py                           # Run reconstruction pipeline
+python -m pytest evaluation/tests/ -v    # Run all tests
 ```
-
-### Run reconstruction pipeline
-```bash
-cd tasks/eht_black_hole && python main.py
-```
-
-### Run evaluation tests
-```bash
-cd tasks/eht_black_hole && python -m pytest evaluation/tests/ -v
-```
-
-### Generate synthetic data (if needed)
-```bash
-cd tasks/eht_black_hole && python -c "from src.generate_data import generate_dataset; generate_dataset()"
-```
-
-## Architecture
-
-- **preprocessing.py**: Loads raw_data (NPZ) and meta_data (JSON), returns arrays ready for the physics model.
-- **physics_model.py**: Implements the forward operator (x → y).
-- **solvers.py**: All solvers share the interface `reconstruct(model, vis, noise_std) → image`.
-- **visualization.py**: Plotting and quality metrics (NRMSE, NCC, dynamic range).
-
-## Key Dependencies
-
-NumPy, SciPy (L-BFGS-B optimizer), Matplotlib. Code prioritizes clarity over performance.
-GPU tasks (e.g., DPI, α-DPI, BH-NeRF) additionally require PyTorch or JAX.
 
 ## Task Cleaning Principles
 
 Tasks are created by **cleaning** existing research code from published papers and their reference implementations. The goal is to restructure real computational imaging code into the standardized benchmark format.
 
+### Code cleaning workflow
+
+Cleaning follows a **test-driven** process. Never rewrite code first and hope it works — define success criteria from the original code, then clean.
+
+1. **Run the original code** — execute the reference implementation on the task's dataset end-to-end. Save all intermediate and final outputs (preprocessed data, model checkpoints, loss history, reconstructed images/samples).
+2. **Define parity tests** — write `test_parity.py` that compares original vs cleaned code at every pipeline stage: preprocessing, forward model, loss functions, solver/architecture, and full-pipeline outputs. These tests guarantee the cleaned code is functionally identical to the original.
+3. **Clean the code** — restructure into our `src/` layout. Run parity tests after each change; fix any discrepancies immediately. Do not proceed to the next stage until all parity tests pass.
+4. **Generate reference outputs** — from the trained original model, produce reference checkpoints (model weights, loss history), posterior samples/statistics, ground truth, and `metrics.json` for `evaluation/reference_outputs/`.
+5. **Write unit tests and fixtures** — per-function tests using `evaluation/fixtures/`.
+6. **Write the notebook** — the notebook loads pretrained weights from `evaluation/reference_outputs/` so it runs in seconds and produces paper-quality results. Include optional commented-out code for training from scratch.
+
 ### Code extraction
-- **Copy from reference repos is encouraged** — clone the reference repo, extract relevant functions, and adapt them to fit our directory structure. Do not rewrite algorithms from scratch.
-- **Preserve original algorithm logic** — the cleaned code should faithfully follow the paper and original implementation, not reinvent the approach.
-- **Self-contained** — each task must run independently. No cross-task imports, and no runtime dependency on the original package (e.g., do not `import ehtim`, `import dpi`, or `import bhnerf`). Instead, extract the needed functions directly into `src/`.
-- **No information leakage** — tasks simulate real-world development. Do not depend on packages published after the paper, since an agent solving the task would not have access to them.
+- **Copy and adapt from reference repos** — clone the reference repo, extract relevant functions, and fit them to our directory structure. Preserve original algorithm logic faithfully; do not rewrite algorithms from scratch.
+- **Domain-standard libraries are allowed** — widely-used packages the original code depends on (e.g., `ehtim`, `astropy`, `torchkbnufft`, `scikit-image`) may be imported directly. Only task-specific research packages (e.g., `import dpi`, `import bhnerf`) should have their functions extracted into `src/`. List all dependencies in `requirements.txt`.
+- **No cross-task imports** — each task must run independently.
+- **No information leakage** — do not depend on packages published after the paper, since an agent solving the task would not have access to them.
 
 ### Data
 - If real observation data is unavailable, **generate synthetic data** via `src/generate_data.py`. Results should be qualitatively similar to the paper figures, not necessarily identical.
@@ -107,4 +94,4 @@ Tasks are created by **cleaning** existing research code from published papers a
 - **Stochastic outputs** (e.g., noise injection, MCMC samples): test statistical properties only (mean, variance, shape, dtype). Never rely on random seed matching for exact value comparison.
 
 ### Pilot reference
-The completed task `tasks/eht_black_hole/` serves as the format reference for all other tasks. When in doubt, follow its structure, code style, and test patterns.
+The completed tasks `tasks/eht_black_hole/` and `tasks/eht_black_hole_UQ/` serve as format references. When in doubt, follow their structure, code style, and test patterns.

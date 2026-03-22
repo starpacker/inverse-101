@@ -2,34 +2,31 @@
 Inverse Problem Solvers for Closure-Only VLBI Imaging
 ======================================================
 
-All solvers share a common interface::
-
-    solver = SolverClass(**hyperparams)
-    image = solver.reconstruct(model, closure_data, ...)
-
-Implemented methods
--------------------
-ClosurePhaseOnlySolver
-    RML imaging using only closure phase chi-squared.
-    Robust to both amplitude and phase gain errors.
-
-ClosurePhasePlusAmpSolver
-    RML imaging using closure phase + log closure amplitude chi-squared.
-    Robust to all station-based calibration errors (Chael et al. 2018).
+Solvers
+-------
+ClosureRMLSolver
+    RML imaging using closure phase and/or log closure amplitude chi-squared.
+    Matches ehtim's Imager objective and optimization strategy:
+    - Log-image transform (optimize in log(I) space)
+    - Objective: Σ α_d*(χ²_d - 1) + Σ α_r*(-S_r(I))
+    - Regularizers are negated to act as penalties (ehtim convention)
 
 VisibilityRMLSolver
-    Traditional RML using calibrated complex visibilities.
-    NOT robust to gain errors — used as a comparison baseline.
+    Traditional visibility-based RML (comparison baseline).
 
-Regularizers (used with all solvers)
--------------------------------------
-TVRegularizer          Total Variation  ‖∇x‖₁  (isotropic, Huber-smoothed)
-MaxEntropyRegularizer  -H(x)  relative entropy w.r.t. a flat prior
-L1SparsityRegularizer  ‖x‖₁  (Huber-smoothed)
+Regularizers (matching ehtim's raw functions)
+---------------------------------------------
+GullSkillingRegularizer   Gull-Skilling entropy: Σ(I - P - I*log(I/P))  [non-positive]
+SimpleEntropyRegularizer  Simple entropy: -Σ I*log(I/P)  [non-positive]
+TVRegularizer             Total Variation (Huber-smoothed)  [non-negative]
+
+Note: ehtim's `regularizer()` function negates entropy values before adding
+to the objective. The solver handles this sign flip, not the regularizer classes.
 
 Reference
 ---------
-Chael et al. (2018). ApJ, 857, 23.
+Chael et al. (2018). ApJ 857, 23.
+ehtim: https://github.com/achael/eht-imaging
 """
 
 import numpy as np
@@ -37,257 +34,323 @@ from scipy.optimize import minimize
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Closure-Only Solvers
+# Regularizers (matching ehtim's raw functions, norm_reg=False)
 # ═══════════════════════════════════════════════════════════════════════════
 
-class ClosurePhaseOnlySolver:
+class GullSkillingRegularizer:
     """
-    RML solver using only closure phase chi-squared.
+    Gull-Skilling entropy (matches ehtim's sgs, norm_reg=False).
 
-    Minimises::
-
-        L(x) = α_cp · χ²_CP(x) + Σ_r λ_r R_r(x)
-
-    where χ²_CP uses the von Mises form (Eq. 11, Chael 2018):
-
-        χ²_CP = (2/N_CP) Σ (1 - cos(φ^obs - φ^model)) / σ²
-
-    This solver is robust to arbitrary station-based gain errors
-    (both amplitude and phase) because closure phases are gain-invariant.
+    S(I) = Σ (I - P - I*log(I/P))   [non-positive, zero when I == P]
 
     Parameters
     ----------
-    regularizers : list of (weight, regularizer) tuples
-    alpha_cp : float
-        Weight for the closure phase data term.
-    n_iter : int
-        Maximum L-BFGS-B iterations.
-    positivity : bool
-        Enforce x ≥ 0 via box constraints.
+    prior : (N, N) ndarray or None — prior image P
     """
 
-    def __init__(
-        self,
-        regularizers=None,
-        alpha_cp: float = 100.0,
-        n_iter: int = 500,
-        positivity: bool = True,
-    ):
-        self.regularizers = regularizers or []
-        self.alpha_cp = alpha_cp
-        self.n_iter = n_iter
-        self.positivity = positivity
+    def __init__(self, prior=None):
+        self.prior = prior
 
-    def reconstruct(
-        self,
-        model,
-        closure_data: dict,
-        x0: np.ndarray = None,
-    ) -> np.ndarray:
+    def value_and_grad(self, x: np.ndarray):
+        if self.prior is None:
+            total = x.sum() + 1e-30
+            prior = np.full_like(x, total / x.size)
+        else:
+            prior = self.prior
+
+        imvec = x.ravel()
+        priorvec = prior.ravel()
+
+        val = float(np.sum(imvec - priorvec - imvec * np.log(imvec / priorvec)))
+        grad = -np.log(imvec / priorvec)
+
+        return val, grad.reshape(x.shape)
+
+
+class SimpleEntropyRegularizer:
+    """
+    Simple entropy (matches ehtim's ssimple, norm_reg=False).
+
+    S(I) = -Σ I*log(I/P)   [non-positive, zero when I == P]
+
+    Parameters
+    ----------
+    prior : (N, N) ndarray or None — prior image P
+    """
+
+    def __init__(self, prior=None):
+        self.prior = prior
+
+    def value_and_grad(self, x: np.ndarray):
+        if self.prior is None:
+            total = x.sum() + 1e-30
+            prior = np.full_like(x, total / x.size)
+        else:
+            prior = self.prior
+
+        imvec = x.ravel()
+        priorvec = prior.ravel()
+
+        val = float(-np.sum(imvec * np.log(imvec / priorvec)))
+        grad = -np.log(imvec / priorvec) - 1
+
+        return val, grad.reshape(x.shape)
+
+
+class TVRegularizer:
+    """
+    Total Variation regularizer (Huber-smoothed, periodic boundary).
+
+    TV(x) = Σ √(dx² + dy² + ε²) - ε   [non-negative]
+
+    ehtim's stv() returns -TV (negated). The solver handles the sign.
+
+    Parameters
+    ----------
+    epsilon : float — Huber smoothing parameter
+    """
+
+    def __init__(self, epsilon: float = 1e-6):
+        self.epsilon = epsilon
+
+    def value_and_grad(self, x: np.ndarray):
+        eps = self.epsilon
+        dx = np.roll(x, -1, axis=1) - x
+        dy = np.roll(x, -1, axis=0) - x
+        mag = np.sqrt(dx**2 + dy**2 + eps**2)
+        val = float(np.sum(mag - eps))
+        dv_dx = dx / mag - np.roll(dx / mag, 1, axis=1)
+        dv_dy = dy / mag - np.roll(dy / mag, 1, axis=0)
+        grad = dv_dx + dv_dy
+        return val, grad
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Solvers
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ClosureRMLSolver:
+    """
+    RML Solver using closure quantity chi-squared.
+
+    Matches ehtim's Imager class:
+    - Optimizes in log-image space (transform=['log']), ensuring positivity
+    - Objective: Σ α_d*(χ²_d - 1) + Σ α_r*(-S_r(I))
+    - Entropy regularizers are negated to become penalties
+    - TV regularizer is already non-negative (no negation needed)
+    - Gradient includes chain rule for log transform: grad_log = I * grad_I
+
+    Parameters
+    ----------
+    data_terms : dict
+        Keys: 'cphase', 'logcamp', 'vis'. Values: weight alpha.
+    reg_terms : dict
+        Keys: 'gs', 'simple', 'tv'. Values: weight alpha.
+    prior : (N, N) ndarray — Gaussian prior image
+    n_iter : int — max L-BFGS-B iterations per round
+    n_rounds : int — number of imaging rounds (like ehtim niter)
+    """
+
+    def __init__(self, data_terms=None, reg_terms=None, prior=None,
+                 n_iter=300, n_rounds=3):
+        self.data_terms = data_terms or {}
+        self.reg_terms = reg_terms or {}
+        self.prior = prior
+        self.n_iter = n_iter
+        self.n_rounds = n_rounds
+
+    def reconstruct(self, model, obs_data, x0=None):
         """
+        Run closure-based RML imaging.
+
         Parameters
         ----------
         model : ClosureForwardModel
-        closure_data : dict with 'cphases', 'sigma_cp'
-        x0 : (N, N) initial image; defaults to uniform positive image
+        obs_data : dict with keys depending on data_terms:
+            'vis_obs', 'sigma_vis' — for vis data term
+            'cp_values_deg', 'cp_sigmas_deg', 'cp_u1/u2/u3' — for cphase
+            'lca_values', 'lca_sigmas', 'lca_u1/u2/u3/u4' — for logcamp
+        x0 : (N, N) initial image, defaults to prior
 
         Returns
         -------
         image : (N, N) reconstructed image
         """
+        from src.physics_model import _ftmatrix
+
         N = model.N
-        cphases_obs = closure_data["cphases"]
-        sigma_cp = closure_data["sigma_cp"]
+        psize = model.pixel_size_rad
 
         if x0 is None:
-            x0 = np.ones((N, N)) / (N * N)
+            x0 = self.prior.copy() if self.prior is not None else np.ones((N, N)) / (N * N)
 
-        def objective_and_grad(x_flat):
-            x = x_flat.reshape(N, N)
+        # Pre-build A matrices for closure quantities
+        A_cp = None
+        if 'cphase' in self.data_terms:
+            A_cp = (
+                _ftmatrix(psize, N, obs_data['cp_u1']),
+                _ftmatrix(psize, N, obs_data['cp_u2']),
+                _ftmatrix(psize, N, obs_data['cp_u3']),
+            )
 
-            # Closure phase data term
-            chisq = self.alpha_cp * model.closure_phase_chisq(x, cphases_obs, sigma_cp)
-            grad = self.alpha_cp * model.closure_phase_chisq_grad(x, cphases_obs, sigma_cp)
+        A_lca = None
+        if 'logcamp' in self.data_terms:
+            A_lca = (
+                _ftmatrix(psize, N, obs_data['lca_u1']),
+                _ftmatrix(psize, N, obs_data['lca_u2']),
+                _ftmatrix(psize, N, obs_data['lca_u3']),
+                _ftmatrix(psize, N, obs_data['lca_u4']),
+            )
 
-            # Regularization
-            for weight, reg in self.regularizers:
-                rv, rg = reg.value_and_grad(x)
-                chisq += weight * rv
-                grad = grad + weight * rg
+        # Build regularizers with sign convention matching ehtim's regularizer():
+        # ehtim negates entropy (sgs, ssimple) so they become penalties (non-negative)
+        # ehtim negates TV (stv returns -TV) — but our TVRegularizer returns +TV,
+        # so we treat it the same as entropy: negate to match ehtim sign convention
+        regularizers = []
+        for reg_name, alpha in self.reg_terms.items():
+            if reg_name == 'gs':
+                regularizers.append((alpha, GullSkillingRegularizer(prior=self.prior)))
+            elif reg_name == 'simple':
+                regularizers.append((alpha, SimpleEntropyRegularizer(prior=self.prior)))
+            elif reg_name == 'tv':
+                regularizers.append((alpha, TVRegularizer()))
 
-            return chisq, grad.ravel()
+        DEGREE = np.pi / 180.0
 
-        bounds = [(0.0, None)] * (N * N) if self.positivity else None
-
-        result = minimize(
-            objective_and_grad,
-            x0.ravel().astype(np.float64),
-            method="L-BFGS-B",
-            jac=True,
-            bounds=bounds,
-            options={"maxiter": self.n_iter, "ftol": 1e-14, "gtol": 1e-9},
-        )
-
-        return result.x.reshape(N, N)
-
-
-# ───────────────────────────────────────────────────────────────────────────
-
-class ClosurePhasePlusAmpSolver:
-    """
-    RML solver using closure phase + log closure amplitude chi-squared.
-
-    Minimises::
-
-        L(x) = α_cp · χ²_CP(x) + α_ca · χ²_logCA(x) + Σ_r λ_r R_r(x)
-
-    Uses both closure phases (Eq. 11) and log closure amplitudes (Eq. 12)
-    from Chael et al. 2018.
-
-    Parameters
-    ----------
-    regularizers : list of (weight, regularizer) tuples
-    alpha_cp : float
-        Weight for closure phase data term.
-    alpha_ca : float
-        Weight for log closure amplitude data term.
-    n_iter : int
-    positivity : bool
-    """
-
-    def __init__(
-        self,
-        regularizers=None,
-        alpha_cp: float = 100.0,
-        alpha_ca: float = 100.0,
-        n_iter: int = 500,
-        positivity: bool = True,
-    ):
-        self.regularizers = regularizers or []
-        self.alpha_cp = alpha_cp
-        self.alpha_ca = alpha_ca
-        self.n_iter = n_iter
-        self.positivity = positivity
-
-    def reconstruct(
-        self,
-        model,
-        closure_data: dict,
-        x0: np.ndarray = None,
-    ) -> np.ndarray:
-        """
-        Parameters
-        ----------
-        model : ClosureForwardModel
-        closure_data : dict with 'cphases', 'sigma_cp', 'log_camps', 'sigma_logca'
-        x0 : (N, N) initial image
-
-        Returns
-        -------
-        image : (N, N) reconstructed image
-        """
-        N = model.N
-        cphases_obs = closure_data["cphases"]
-        sigma_cp = closure_data["sigma_cp"]
-        log_camps_obs = closure_data["log_camps"]
-        sigma_logca = closure_data["sigma_logca"]
-
-        if x0 is None:
-            x0 = np.ones((N, N)) / (N * N)
-
-        def objective_and_grad(x_flat):
-            x = x_flat.reshape(N, N)
+        def objective_and_grad(logimvec):
+            """Objective in log-image space (matching ehtim transform=['log'])."""
+            imvec = np.exp(logimvec)  # change of variables: I = exp(log_I)
+            img = imvec.reshape(N, N)
+            total_obj = 0.0
+            total_grad = np.zeros(N * N)
 
             # Closure phase data term
-            chisq = self.alpha_cp * model.closure_phase_chisq(x, cphases_obs, sigma_cp)
-            grad = self.alpha_cp * model.closure_phase_chisq_grad(x, cphases_obs, sigma_cp)
+            if 'cphase' in self.data_terms and A_cp is not None:
+                alpha = self.data_terms['cphase']
+                cp_obs = obs_data['cp_values_deg'] * DEGREE
+                cp_sig = obs_data['cp_sigmas_deg'] * DEGREE
+
+                i1 = A_cp[0] @ imvec
+                i2 = A_cp[1] @ imvec
+                i3 = A_cp[2] @ imvec
+                cp_model = np.angle(i1 * i2 * i3)
+
+                n_cp = len(cp_obs)
+                chisq = (2.0 / n_cp) * np.sum(
+                    (1.0 - np.cos(cp_obs - cp_model)) / cp_sig**2
+                )
+
+                pref = np.sin(cp_obs - cp_model) / cp_sig**2
+                g = (pref / i1) @ A_cp[0] + (pref / i2) @ A_cp[1] + (pref / i3) @ A_cp[2]
+                grad_chisq = (-2.0 / n_cp) * np.imag(g)
+
+                total_obj += alpha * (chisq - 1.0)
+                total_grad += alpha * grad_chisq
 
             # Log closure amplitude data term
-            chisq += self.alpha_ca * model.log_closure_amp_chisq(x, log_camps_obs, sigma_logca)
-            grad = grad + self.alpha_ca * model.log_closure_amp_chisq_grad(x, log_camps_obs, sigma_logca)
+            if 'logcamp' in self.data_terms and A_lca is not None:
+                alpha = self.data_terms['logcamp']
+                lca_obs = obs_data['lca_values']
+                lca_sig = obs_data['lca_sigmas']
 
-            # Regularization
-            for weight, reg in self.regularizers:
-                rv, rg = reg.value_and_grad(x)
-                chisq += weight * rv
-                grad = grad + weight * rg
+                i1 = A_lca[0] @ imvec
+                i2 = A_lca[1] @ imvec
+                i3 = A_lca[2] @ imvec
+                i4 = A_lca[3] @ imvec
 
-            return chisq, grad.ravel()
+                lca_model = (np.log(np.abs(i1)) + np.log(np.abs(i2))
+                            - np.log(np.abs(i3)) - np.log(np.abs(i4)))
 
-        bounds = [(0.0, None)] * (N * N) if self.positivity else None
+                n_ca = len(lca_obs)
+                chisq = np.sum(np.abs((lca_obs - lca_model) / lca_sig)**2) / n_ca
 
-        result = minimize(
-            objective_and_grad,
-            x0.ravel().astype(np.float64),
-            method="L-BFGS-B",
-            jac=True,
-            bounds=bounds,
-            options={"maxiter": self.n_iter, "ftol": 1e-14, "gtol": 1e-9},
-        )
+                pp = (lca_obs - lca_model) / lca_sig**2
+                g = ((pp / i1) @ A_lca[0] + (pp / i2) @ A_lca[1]
+                   + (-pp / i3) @ A_lca[2] + (-pp / i4) @ A_lca[3])
+                grad_chisq = (-2.0 / n_ca) * np.real(g)
 
-        return result.x.reshape(N, N)
+                total_obj += alpha * (chisq - 1.0)
+                total_grad += alpha * grad_chisq
 
+            # Visibility data term (ehtim uses 2*n_vis normalization for complex vis)
+            if 'vis' in self.data_terms:
+                alpha = self.data_terms['vis']
+                vis_obs = obs_data['vis_obs']
+                sigma = obs_data['sigma_vis']
 
-# ───────────────────────────────────────────────────────────────────────────
+                vis_model = model.A @ imvec
+                residual = vis_model - vis_obs
+                n_vis = len(vis_obs)
+                chisq = np.sum(np.abs(residual / sigma)**2) / (2 * n_vis)
+                grad_chisq = (1.0 / n_vis) * (model.A.conj().T @ (residual / sigma**2)).real
+
+                total_obj += alpha * (chisq - 1.0)
+                total_grad += alpha * grad_chisq
+
+            # Regularization — negate entropy regularizers (matching ehtim convention)
+            # ehtim's regularizer() returns -sgs(), -ssimple(), -stv() so they are
+            # non-negative penalties. Our classes return the raw (non-positive) values,
+            # so we negate them here.
+            for weight, reg in regularizers:
+                rv, rg = reg.value_and_grad(img)
+                total_obj += weight * (-rv)    # negate: -S is non-negative penalty
+                total_grad += weight * (-rg.ravel())
+
+            # Chain rule for log transform: d/d(log I) = I * d/dI
+            total_grad *= imvec
+
+            return float(total_obj), total_grad.astype(np.float64)
+
+        # Multi-round optimization in log-image space (matching ehtim's niter)
+        # ehtim: xinit = log(init_image), no bounds (log space is unconstrained)
+        current = np.log(np.maximum(x0.ravel(), 1e-30)).astype(np.float64)
+
+        for round_idx in range(self.n_rounds):
+            result = minimize(
+                objective_and_grad,
+                current,
+                method='L-BFGS-B',
+                jac=True,
+                options={'maxiter': self.n_iter, 'ftol': 1e-14, 'gtol': 1e-10},
+            )
+            current = result.x.copy()
+
+        # Convert back from log space
+        return np.exp(current).reshape(N, N)
+
 
 class VisibilityRMLSolver:
     """
-    Traditional RML solver using calibrated complex visibilities.
+    Traditional visibility-based RML solver (comparison baseline).
 
-    Minimises::
+    Minimizes: (1/2M) Σ |A*x - y|²/σ² + Σ λ_r R_r(x)
 
-        L(x) = ‖Ax − y‖² / (2σ²) + Σ_r λ_r R_r(x)
-
-    NOT robust to station-based gain errors. Used as a comparison to
-    demonstrate that closure-only imaging is superior when gains are corrupt.
-
-    Parameters
-    ----------
-    regularizers : list of (weight, regularizer) tuples
-    n_iter : int
-    positivity : bool
+    Uses bounded L-BFGS-B (no log transform) with positivity constraint.
     """
 
-    def __init__(
-        self,
-        regularizers=None,
-        n_iter: int = 500,
-        positivity: bool = True,
-    ):
+    def __init__(self, regularizers=None, n_iter=500, positivity=True):
         self.regularizers = regularizers or []
         self.n_iter = n_iter
         self.positivity = positivity
 
-    def reconstruct(
-        self,
-        model,
-        vis: np.ndarray,
-        noise_std: float = 1.0,
-        x0: np.ndarray = None,
-    ) -> np.ndarray:
-        """
-        Parameters
-        ----------
-        model : ClosureForwardModel
-        vis : (M,) complex visibilities
-        noise_std : float
-        x0 : (N, N) initial image
-
-        Returns
-        -------
-        image : (N, N) reconstructed image
-        """
+    def reconstruct(self, model, vis, noise_std=1.0, x0=None):
         N = model.N
-
         if x0 is None:
             x0 = model.dirty_image(vis).clip(0)
 
+        sigma = noise_std if np.isscalar(noise_std) else noise_std
+
         def objective_and_grad(x_flat):
             x = x_flat.reshape(N, N)
+            vis_model = model.A @ x_flat
+            residual = vis_model - vis
 
-            residual = model.A @ x_flat - vis
-            chi2 = 0.5 * np.sum(np.abs(residual) ** 2) / noise_std ** 2
-            grad_chi2 = (model.A.conj().T @ residual).real / noise_std ** 2
+            if np.isscalar(sigma):
+                chi2 = 0.5 * np.sum(np.abs(residual)**2) / sigma**2
+                grad_chi2 = (model.A.conj().T @ residual).real / sigma**2
+            else:
+                chi2 = 0.5 * np.sum(np.abs(residual / sigma)**2)
+                grad_chi2 = (model.A.conj().T @ (residual / sigma**2)).real
 
             reg_val = 0.0
             reg_grad = np.zeros(N * N)
@@ -299,124 +362,12 @@ class VisibilityRMLSolver:
             return chi2 + reg_val, grad_chi2 + reg_grad
 
         bounds = [(0.0, None)] * (N * N) if self.positivity else None
-
         result = minimize(
             objective_and_grad,
             x0.ravel().astype(np.float64),
-            method="L-BFGS-B",
+            method='L-BFGS-B',
             jac=True,
             bounds=bounds,
-            options={"maxiter": self.n_iter, "ftol": 1e-14, "gtol": 1e-9},
+            options={'maxiter': self.n_iter, 'ftol': 1e-14, 'gtol': 1e-9},
         )
-
         return result.x.reshape(N, N)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Regularizers
-# ═══════════════════════════════════════════════════════════════════════════
-
-class TVRegularizer:
-    """
-    Isotropic Total Variation regularizer.
-
-    TV(x) = Σ_{i,j} √( (∂x/∂l)²_{i,j} + (∂x/∂m)²_{i,j} + ε² ) − ε
-
-    Huber smoothing (parameter ε) makes the function differentiable at zero.
-
-    Parameters
-    ----------
-    epsilon : float
-        Smoothing parameter.
-    """
-
-    def __init__(self, epsilon: float = 1e-6):
-        self.epsilon = epsilon
-
-    def value_and_grad(self, x: np.ndarray):
-        """
-        Parameters
-        ----------
-        x : (N, N) image
-
-        Returns
-        -------
-        val  : float, TV(x)
-        grad : (N, N) array, ∂TV/∂x
-        """
-        eps = self.epsilon
-
-        dx = np.roll(x, -1, axis=1) - x
-        dy = np.roll(x, -1, axis=0) - x
-
-        mag = np.sqrt(dx ** 2 + dy ** 2 + eps ** 2)
-        val = float(np.sum(mag - eps))
-
-        dv_dx = dx / mag - np.roll(dx / mag, 1, axis=1)
-        dv_dy = dy / mag - np.roll(dy / mag, 1, axis=0)
-        grad = dv_dx + dv_dy
-
-        return val, grad
-
-
-class MaxEntropyRegularizer:
-    """
-    Relative entropy (KL divergence from a prior).
-
-    R(x) = Σ_i x_i log(x_i / p_i)
-
-    Parameters
-    ----------
-    prior : ndarray (N, N) or None
-        Prior image. If None, uses a uniform flat prior.
-    epsilon : float
-        Small floor to avoid log(0).
-    """
-
-    def __init__(self, prior: np.ndarray = None, epsilon: float = 1e-12):
-        self.prior = prior
-        self.epsilon = epsilon
-
-    def value_and_grad(self, x: np.ndarray):
-        """
-        Returns
-        -------
-        val  : float
-        grad : (N, N) array
-        """
-        if self.prior is None:
-            total = x.sum() + self.epsilon
-            prior = np.full_like(x, total / x.size)
-        else:
-            prior = self.prior
-
-        x_s = np.maximum(x, self.epsilon)
-        p_s = np.maximum(prior, self.epsilon)
-
-        val = float(np.sum(x_s * np.log(x_s / p_s)))
-        grad = np.log(x_s / p_s) + 1.0
-
-        return val, grad
-
-
-class L1SparsityRegularizer:
-    """
-    Smoothed L1 (sparsity) regularizer.
-
-    R(x) = Σ_i (√(x_i² + ε²) − ε)  ≈  ‖x‖₁
-
-    Parameters
-    ----------
-    epsilon : float
-        Huber smoothing parameter.
-    """
-
-    def __init__(self, epsilon: float = 1e-8):
-        self.epsilon = epsilon
-
-    def value_and_grad(self, x: np.ndarray):
-        eps = self.epsilon
-        mag = np.sqrt(x ** 2 + eps ** 2)
-        val = float(np.sum(mag - eps))
-        grad = x / mag
-        return val, grad

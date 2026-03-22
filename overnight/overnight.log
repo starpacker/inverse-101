@@ -68,3 +68,34 @@ To github.com:HeSunPU/imaging-101.git
 2026-03-22 13:14:15 Starting claude -p for eht_black_hole_UQ (budget=$50.00)...
 2026-03-22 13:14:34 Claude completed eht_black_hole_UQ successfully
 2026-03-22 13:14:34 Committing changes for eht_black_hole_UQ...
+[main 1dbf86d] Clean task: eht_black_hole_UQ
+ 2 files changed, 60 insertions(+)
+ create mode 100644 overnight/logs/03_eht_black_hole_UQ.log
+2026-03-22 13:14:34 Pushing to origin/main...
+To github.com:HeSunPU/imaging-101.git
+   6ccc050..1dbf86d  main -> main
+2026-03-22 13:14:38 TASK 03: eht_black_hole_UQ DONE
+
+
+=============================================
+2026-03-22 13:14:38 ALL TASKS COMPLETED
+=============================================
+
+Task logs:
+total 16
+drwxrwxr-x 2 groot groot 4096  3月 22 13:14 .
+drwxrwxr-x 4 groot groot 4096  3月 22 13:03 ..
+-rw-rw-r-- 1 groot groot   79  3月 22 13:14 01_eht_black_hole_original.log
+-rw-rw-r-- 1 groot groot    1  3月 22 13:14 03_eht_black_hole_UQ.log
+
+Git log:
+1dbf86d Clean task: eht_black_hole_UQ
+6ccc050 Clean task: eht_black_hole_original
+3cf8985 Clean task: eht_black_hole_original
+fbf01ba Clean task: eht_black_hole_original
+dce3112 Add DPI benchmark data files (obs.uvfits, gt.fits)
+8ec648f Add real-data notebook: EHT uv-coverage + amplitude-only RML
+5c10525 Execute notebook and embed all cell outputs with visualizations
+fc6f6cb Fix numerical issues and CLEAN divergence for EHT sparse PSF
+af7d827 Add EHT black hole imaging task (first benchmark task)
+3ee3855 Initial commit

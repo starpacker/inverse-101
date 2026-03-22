@@ -1,15 +1,21 @@
 """
-Data Preprocessing for Closure-Only EHT Imaging
-=================================================
+Preprocessing: Load Observations and Compute Closure Quantities
+================================================================
 
-Handles loading raw observation data, computing closure phases and closure
-amplitudes from complex visibilities, and estimating their noise statistics.
+Loads raw VLBI data (visibilities, uv-coordinates, station info) and
+computes closure phases and log closure amplitudes with noise estimates.
 
-Pipeline: raw_data (NPZ) + meta_data (JSON) → closure quantities + imaging parameters
-
-Reference
+Functions
 ---------
-Chael et al. (2018), ApJ 857, 23 — Eqs. 9–12.
+load_observation   Load raw_data.npz
+load_metadata      Load meta_data JSON
+find_triangles     Enumerate independent closure-phase triangles
+find_quadrangles   Enumerate independent closure-amplitude quadrangles
+compute_closure_phases           Complex vis → closure phases (radians)
+compute_log_closure_amplitudes   Complex vis → log closure amplitudes
+closure_phase_sigma              Error propagation for closure phase noise
+closure_amplitude_sigma          Error propagation for log closure amp noise
+prepare_data       Combined loader returning all data structures
 """
 
 import os
@@ -20,351 +26,303 @@ from itertools import combinations
 
 def load_observation(data_dir: str = "data") -> dict:
     """
-    Load raw observation data.
-
-    Parameters
-    ----------
-    data_dir : str
-        Path to the data directory containing the raw_data file.
+    Load raw observation data from raw_data.npz.
 
     Returns
     -------
     dict with keys:
-        'vis_corrupted' : (M,) complex ndarray — gain-corrupted visibilities
-        'vis_true'      : (M,) complex ndarray — true (uncorrupted) visibilities
-        'uv_coords'     : (M, 2) ndarray — baseline coordinates in wavelengths
-        'station_ids'   : (M, 2) int ndarray — station pair for each baseline
-        'noise_std_per_vis' : (M,) ndarray — per-visibility noise std
+        vis_cal       : (M,) complex — calibrated visibilities
+        vis_corrupt   : (M,) complex — gain-corrupted visibilities
+        uv_coords     : (M, 2) float — baseline (u,v) in wavelengths
+        sigma_vis     : (M,) float — per-baseline noise σ (Jy)
+        station_ids   : (M, 2) int — station pair indices
+        And closure data from ehtim (per-scan):
+        cp_values_deg, cp_sigmas_deg, cp_u1/u2/u3 — calibrated closure phases
+        lca_values, lca_sigmas, lca_u1/u2/u3/u4 — calibrated log closure amps
+        cp_corrupt_values_deg, etc. — corrupted closure quantities
     """
     path = os.path.join(data_dir, "raw_data.npz")
-    data = np.load(path, allow_pickle=False)
-    return {
-        "vis_corrupted": data["vis_corrupted"],
-        "vis_true": data["vis_true"],
-        "uv_coords": data["uv_coords"],
-        "station_ids": data["station_ids"],
-        "noise_std_per_vis": data["noise_std_per_vis"],
-    }
+    d = np.load(path)
+    result = {}
+    for key in d.files:
+        result[key] = d[key]
+    return result
 
 
 def load_metadata(data_dir: str = "data") -> dict:
     """
-    Load imaging metadata.
-
-    Parameters
-    ----------
-    data_dir : str
-        Path to the data directory containing the meta_data file.
+    Load imaging parameters from meta_data (JSON).
 
     Returns
     -------
-    dict with keys:
-        'N'              : int   — image size (N x N pixels)
-        'pixel_size_uas' : float — pixel size in microarcseconds
-        'pixel_size_rad' : float — pixel size in radians
-        'freq_ghz'       : float — observing frequency in GHz
-        'source_dec_deg' : float — source declination in degrees
-        'obs_duration_hours' : float
-        'n_baselines'    : int   — number of measured baselines
-        'n_stations'     : int   — number of stations
-        'gain_amp_error' : float — fractional amplitude gain error applied
-        'gain_phase_error_deg' : float — phase gain error (degrees) applied
+    dict with imaging parameters (N, pixel_size_rad, etc.)
     """
     path = os.path.join(data_dir, "meta_data")
-    with open(path, "r") as f:
+    with open(path) as f:
         return json.load(f)
 
 
 def find_triangles(station_ids: np.ndarray, n_stations: int) -> np.ndarray:
     """
-    Find all independent closure phase triangles from baseline station pairs.
+    Enumerate independent closure-phase triangles.
+
+    For each scan (all baselines share the same set of stations),
+    find a minimal set of triangles. A minimal set has N_s - 1 choose 2
+    triangles for N_s stations (one per independent closure phase).
+
+    Uses the minimum-spanning-tree approach: pick triangles from all
+    combinations of 3 stations that form valid baselines.
 
     Parameters
     ----------
-    station_ids : (M, 2) int ndarray
-        Station pair indices for each baseline.
-    n_stations : int
-        Total number of stations.
+    station_ids : (M, 2) int — station pair indices
+    n_stations  : int — number of stations
 
     Returns
     -------
-    triangles : (N_tri, 3, 2) int ndarray
-        Each row is [baseline_idx, baseline_idx, baseline_idx] forming a triangle.
-        Actually returns (N_tri, 3) where each entry is the baseline index.
-    triangle_stations : (N_tri, 3) int ndarray
-        Station indices forming each triangle (i, j, k).
+    triangles : (N_tri, 3) int — station index triples (i, j, k)
     """
-    # Build lookup: (s1, s2) → baseline index
-    bl_lookup = {}
-    for idx, (s1, s2) in enumerate(station_ids):
-        bl_lookup[(int(s1), int(s2))] = idx
-        bl_lookup[(int(s2), int(s1))] = -(idx + 1)  # negative = conjugate
+    # Build set of available baselines
+    baselines = set()
+    for row in station_ids:
+        i, j = int(row[0]), int(row[1])
+        baselines.add((min(i, j), max(i, j)))
 
-    stations = sorted(set(station_ids.ravel()))
     triangles = []
-    triangle_stations_list = []
+    for combo in combinations(range(n_stations), 3):
+        i, j, k = combo
+        if ((i, j) in baselines and
+            (j, k) in baselines and
+            (i, k) in baselines):
+            triangles.append([i, j, k])
 
-    for i, j, k in combinations(stations, 3):
-        # Need baselines (i,j), (j,k), (k,i)
-        key_ij = (i, j) if (i, j) in bl_lookup else None
-        key_jk = (j, k) if (j, k) in bl_lookup else None
-        key_ki = (k, i) if (k, i) in bl_lookup else None
-
-        if key_ij is None:
-            key_ij = (j, i) if (j, i) in bl_lookup else None
-        if key_jk is None:
-            key_jk = (k, j) if (k, j) in bl_lookup else None
-        if key_ki is None:
-            key_ki = (i, k) if (i, k) in bl_lookup else None
-
-        if key_ij is not None and key_jk is not None and key_ki is not None:
-            triangles.append([bl_lookup[key_ij], bl_lookup[key_jk], bl_lookup[key_ki]])
-            triangle_stations_list.append([i, j, k])
-
-    return np.array(triangles, dtype=np.int64), np.array(triangle_stations_list, dtype=np.int64)
+    return np.array(triangles, dtype=np.int64)
 
 
 def find_quadrangles(station_ids: np.ndarray, n_stations: int) -> np.ndarray:
     """
-    Find all independent closure amplitude quadrangles.
+    Enumerate independent closure-amplitude quadrangles.
 
-    For stations (i, j, k, l), the closure amplitude is:
-        CA = |V_ij * V_kl| / |V_ik * V_jl|
+    A quadrangle (i, j, k, l) gives log closure amplitude:
+        log|V_ij| + log|V_kl| - log|V_ik| - log|V_jl|
 
     Parameters
     ----------
-    station_ids : (M, 2) int ndarray
-    n_stations : int
+    station_ids : (M, 2) int
+    n_stations  : int
 
     Returns
     -------
-    quadrangles : (N_quad, 4) int ndarray
-        Each row is [bl_ij, bl_kl, bl_ik, bl_jl] — first two numerator, last two denominator.
-    quadrangle_stations : (N_quad, 4) int ndarray
-        Station indices (i, j, k, l).
+    quadrangles : (N_quad, 4) int — station index quads (i, j, k, l)
     """
-    bl_lookup = {}
-    for idx, (s1, s2) in enumerate(station_ids):
-        bl_lookup[(int(s1), int(s2))] = idx
-        bl_lookup[(int(s2), int(s1))] = idx  # amplitude is symmetric
+    baselines = set()
+    for row in station_ids:
+        i, j = int(row[0]), int(row[1])
+        baselines.add((min(i, j), max(i, j)))
 
-    stations = sorted(set(station_ids.ravel()))
     quadrangles = []
-    quadrangle_stations_list = []
+    for combo in combinations(range(n_stations), 4):
+        i, j, k, l = combo
+        # Need all 6 baselines for the 4 stations
+        pairs = [(i, j), (i, k), (i, l), (j, k), (j, l), (k, l)]
+        if all(p in baselines for p in pairs):
+            quadrangles.append([i, j, k, l])
 
-    for i, j, k, l in combinations(stations, 4):
-        # Numerator: (i,j) and (k,l); Denominator: (i,k) and (j,l)
-        def get_bl(a, b):
-            return bl_lookup.get((a, b), bl_lookup.get((b, a), None))
-
-        bl_ij = get_bl(i, j)
-        bl_kl = get_bl(k, l)
-        bl_ik = get_bl(i, k)
-        bl_jl = get_bl(j, l)
-
-        if all(x is not None for x in [bl_ij, bl_kl, bl_ik, bl_jl]):
-            quadrangles.append([bl_ij, bl_kl, bl_ik, bl_jl])
-            quadrangle_stations_list.append([i, j, k, l])
-
-    return np.array(quadrangles, dtype=np.int64), np.array(quadrangle_stations_list, dtype=np.int64)
+    return np.array(quadrangles, dtype=np.int64)
 
 
-def compute_closure_phases(vis: np.ndarray, triangles: np.ndarray,
-                           station_ids: np.ndarray) -> np.ndarray:
+def _find_baseline(station_ids, s1, s2):
+    """Find baseline index for station pair (s1, s2) or (s2, s1).
+
+    Returns (index, conjugate) where conjugate is True if the baseline
+    is stored as (s2, s1) and the visibility must be conjugated.
     """
-    Compute closure phases from complex visibilities on triangles.
+    # Forward match
+    mask_fwd = (station_ids[:, 0] == s1) & (station_ids[:, 1] == s2)
+    idx_fwd = np.where(mask_fwd)[0]
+    if len(idx_fwd) > 0:
+        return int(idx_fwd[0]), False
 
-    The bispectrum for triangle (i,j,k) is:
-        B_ijk = V_ij * V_jk * V_ki
+    # Reverse match
+    mask_rev = (station_ids[:, 0] == s2) & (station_ids[:, 1] == s1)
+    idx_rev = np.where(mask_rev)[0]
+    if len(idx_rev) > 0:
+        return int(idx_rev[0]), True
 
-    The closure phase is φ_ijk = arg(B_ijk).
+    raise ValueError(f"Baseline ({s1}, {s2}) not found")
 
-    Station-based gains cancel: if V_ij^obs = g_i * g_j^* * V_ij^true,
-    then B^obs = |g_i|² |g_j|² |g_k|² * B^true, so
-    arg(B^obs) = arg(B^true).
+
+def compute_closure_phases(
+    vis: np.ndarray,
+    station_ids: np.ndarray,
+    triangles: np.ndarray,
+) -> np.ndarray:
+    """
+    Compute closure phases from complex visibilities.
+
+    Closure phase for triangle (i, j, k):
+        φ_C = arg(V_ij * V_jk * V_ki)
 
     Parameters
     ----------
-    vis : (M,) complex ndarray
-    triangles : (N_tri, 3) int ndarray — baseline indices per triangle
-    station_ids : (M, 2) int ndarray
+    vis        : (M,) complex visibilities
+    station_ids: (M, 2) int station pairs
+    triangles  : (N_tri, 3) int station triples
 
     Returns
     -------
-    cphases : (N_tri,) ndarray — closure phases in radians
+    cphase : (N_tri,) float — closure phases in radians
     """
-    # Build baseline orientation lookup
-    bl_orient = {}
-    for idx, (s1, s2) in enumerate(station_ids):
-        bl_orient[idx] = (int(s1), int(s2))
+    n_tri = len(triangles)
+    cphase = np.zeros(n_tri)
 
-    cphases = np.zeros(len(triangles))
-    for t, tri_bl in enumerate(triangles):
-        # Compute bispectrum V_ij * V_jk * V_ki
-        bispec = np.complex128(1.0)
-        for bl_code in tri_bl:
-            bl_idx = bl_code
-            if bl_idx >= 0:
-                bispec *= vis[bl_idx]
-            else:
-                bispec *= np.conj(vis[-(bl_idx + 1)])
-        cphases[t] = np.angle(bispec)
+    for t in range(n_tri):
+        i, j, k = triangles[t]
 
-    return cphases
+        idx_ij, conj_ij = _find_baseline(station_ids, i, j)
+        idx_jk, conj_jk = _find_baseline(station_ids, j, k)
+        idx_ki, conj_ki = _find_baseline(station_ids, k, i)
+
+        v_ij = np.conj(vis[idx_ij]) if conj_ij else vis[idx_ij]
+        v_jk = np.conj(vis[idx_jk]) if conj_jk else vis[idx_jk]
+        v_ki = np.conj(vis[idx_ki]) if conj_ki else vis[idx_ki]
+
+        cphase[t] = np.angle(v_ij * v_jk * v_ki)
+
+    return cphase
 
 
-def compute_closure_amplitudes(vis: np.ndarray, quadrangles: np.ndarray) -> np.ndarray:
+def compute_log_closure_amplitudes(
+    vis: np.ndarray,
+    station_ids: np.ndarray,
+    quadrangles: np.ndarray,
+) -> np.ndarray:
     """
-    Compute closure amplitudes from visibility amplitudes on quadrangles.
+    Compute log closure amplitudes from complex visibilities.
 
-    For quadrangle (i,j,k,l):
-        CA = |V_ij| * |V_kl| / (|V_ik| * |V_jl|)
-
-    Station-based gain amplitudes cancel:
-        CA^obs = CA^true (gain amplitudes fully cancel in the ratio).
+    For quadrangle (i, j, k, l):
+        log CA = log|V_ij| + log|V_kl| - log|V_ik| - log|V_jl|
 
     Parameters
     ----------
-    vis : (M,) complex ndarray
-    quadrangles : (N_quad, 4) int ndarray — [bl_ij, bl_kl, bl_ik, bl_jl]
+    vis         : (M,) complex visibilities
+    station_ids : (M, 2) int
+    quadrangles : (N_quad, 4) int station quads
 
     Returns
     -------
-    camps : (N_quad,) ndarray — closure amplitudes (positive real)
+    logcamp : (N_quad,) float
     """
-    amp = np.abs(vis)
-    num = amp[quadrangles[:, 0]] * amp[quadrangles[:, 1]]
-    den = amp[quadrangles[:, 2]] * amp[quadrangles[:, 3]]
-    camps = num / np.maximum(den, 1e-30)
-    return camps
+    n_quad = len(quadrangles)
+    logcamp = np.zeros(n_quad)
+
+    for q in range(n_quad):
+        i, j, k, l = quadrangles[q]
+
+        idx_ij, _ = _find_baseline(station_ids, i, j)
+        idx_kl, _ = _find_baseline(station_ids, k, l)
+        idx_ik, _ = _find_baseline(station_ids, i, k)
+        idx_jl, _ = _find_baseline(station_ids, j, l)
+
+        logcamp[q] = (np.log(np.abs(vis[idx_ij])) + np.log(np.abs(vis[idx_kl]))
+                     - np.log(np.abs(vis[idx_ik])) - np.log(np.abs(vis[idx_jl])))
+
+    return logcamp
 
 
-def compute_log_closure_amplitudes(vis: np.ndarray, quadrangles: np.ndarray) -> np.ndarray:
+def closure_phase_sigma(
+    sigma_vis: np.ndarray,
+    vis: np.ndarray,
+    station_ids: np.ndarray,
+    triangles: np.ndarray,
+) -> np.ndarray:
     """
-    Compute log closure amplitudes.
+    Noise propagation for closure phases.
 
-    log CA = log|V_ij| + log|V_kl| - log|V_ik| - log|V_jl|
+    σ_CP = sqrt(σ₁²/|V₁|² + σ₂²/|V₂|² + σ₃²/|V₃|²)
 
-    Parameters
-    ----------
-    vis : (M,) complex ndarray
-    quadrangles : (N_quad, 4) int ndarray
-
-    Returns
-    -------
-    log_camps : (N_quad,) ndarray
+    Returns closure phase sigma in radians.
     """
-    log_amp = np.log(np.maximum(np.abs(vis), 1e-30))
-    log_camps = (log_amp[quadrangles[:, 0]] + log_amp[quadrangles[:, 1]]
-                 - log_amp[quadrangles[:, 2]] - log_amp[quadrangles[:, 3]])
-    return log_camps
+    n_tri = len(triangles)
+    sigma_cp = np.zeros(n_tri)
 
+    for t in range(n_tri):
+        i, j, k = triangles[t]
+        idx_ij, _ = _find_baseline(station_ids, i, j)
+        idx_jk, _ = _find_baseline(station_ids, j, k)
+        idx_ki, _ = _find_baseline(station_ids, k, i)
 
-def closure_phase_sigma(vis: np.ndarray, noise_std_per_vis: np.ndarray,
-                        triangles: np.ndarray) -> np.ndarray:
-    """
-    Compute closure phase noise standard deviation.
-
-    For triangle with baselines (1,2,3), the closure phase noise is:
-        σ_ψ = sqrt(σ₁²/|V₁|² + σ₂²/|V₂|² + σ₃²/|V₃|²)
-
-    (Eq. 11 of Chael et al. 2018, linearized error propagation.)
-
-    Parameters
-    ----------
-    vis : (M,) complex ndarray
-    noise_std_per_vis : (M,) ndarray
-    triangles : (N_tri, 3) int ndarray
-
-    Returns
-    -------
-    sigma_cp : (N_tri,) ndarray — closure phase noise in radians
-    """
-    amp = np.maximum(np.abs(vis), 1e-30)
-    sigma_cp = np.zeros(len(triangles))
-    for t, tri_bl in enumerate(triangles):
-        var_sum = 0.0
-        for bl_code in tri_bl:
-            bl_idx = abs(bl_code) if bl_code >= 0 else -(bl_code + 1)
-            var_sum += (noise_std_per_vis[bl_idx] / amp[bl_idx]) ** 2
+        var_sum = (sigma_vis[idx_ij]**2 / np.abs(vis[idx_ij])**2 +
+                   sigma_vis[idx_jk]**2 / np.abs(vis[idx_jk])**2 +
+                   sigma_vis[idx_ki]**2 / np.abs(vis[idx_ki])**2)
         sigma_cp[t] = np.sqrt(var_sum)
+
     return sigma_cp
 
 
-def closure_amplitude_sigma(vis: np.ndarray, noise_std_per_vis: np.ndarray,
-                            quadrangles: np.ndarray) -> np.ndarray:
+def closure_amplitude_sigma(
+    sigma_vis: np.ndarray,
+    vis: np.ndarray,
+    station_ids: np.ndarray,
+    quadrangles: np.ndarray,
+) -> np.ndarray:
     """
-    Compute log closure amplitude noise standard deviation.
+    Noise propagation for log closure amplitudes.
 
     σ_logCA = sqrt(1/SNR₁² + 1/SNR₂² + 1/SNR₃² + 1/SNR₄²)
 
     where SNR_k = |V_k| / σ_k.
-
-    (Eq. 12 of Chael et al. 2018.)
-
-    Parameters
-    ----------
-    vis : (M,) complex ndarray
-    noise_std_per_vis : (M,) ndarray
-    quadrangles : (N_quad, 4) int ndarray
-
-    Returns
-    -------
-    sigma_logca : (N_quad,) ndarray
     """
-    amp = np.maximum(np.abs(vis), 1e-30)
-    snr = amp / np.maximum(noise_std_per_vis, 1e-30)
+    n_quad = len(quadrangles)
+    sigma_lca = np.zeros(n_quad)
 
-    var_sum = (1.0 / snr[quadrangles[:, 0]] ** 2 +
-               1.0 / snr[quadrangles[:, 1]] ** 2 +
-               1.0 / snr[quadrangles[:, 2]] ** 2 +
-               1.0 / snr[quadrangles[:, 3]] ** 2)
-    return np.sqrt(var_sum)
+    for q in range(n_quad):
+        i, j, k, l = quadrangles[q]
+        idx_ij, _ = _find_baseline(station_ids, i, j)
+        idx_kl, _ = _find_baseline(station_ids, k, l)
+        idx_ik, _ = _find_baseline(station_ids, i, k)
+        idx_jl, _ = _find_baseline(station_ids, j, l)
+
+        var_sum = (sigma_vis[idx_ij]**2 / np.abs(vis[idx_ij])**2 +
+                   sigma_vis[idx_kl]**2 / np.abs(vis[idx_kl])**2 +
+                   sigma_vis[idx_ik]**2 / np.abs(vis[idx_ik])**2 +
+                   sigma_vis[idx_jl]**2 / np.abs(vis[idx_jl])**2)
+        sigma_lca[q] = np.sqrt(var_sum)
+
+    return sigma_lca
 
 
 def prepare_data(data_dir: str = "data") -> tuple:
     """
-    Load and prepare all data needed for closure-only reconstruction.
-
-    Parameters
-    ----------
-    data_dir : str
+    Load all data and compute closure quantities.
 
     Returns
     -------
-    obs : dict
-        Observation data including visibilities, station_ids, noise.
-    closure_data : dict
-        Closure phases, closure amplitudes, their noise estimates,
-        triangle/quadrangle index arrays.
-    metadata : dict
-        Imaging parameters.
+    obs : dict — observation data
+    closure : dict — closure phases, log closure amps, sigmas, triangles, quadrangles
+    meta : dict — imaging parameters
     """
     obs = load_observation(data_dir)
-    metadata = load_metadata(data_dir)
-    n_stations = metadata["n_stations"]
+    meta = load_metadata(data_dir)
 
-    vis = obs["vis_corrupted"]
-    station_ids = obs["station_ids"]
-    noise_per_vis = obs["noise_std_per_vis"]
+    n_stations = meta["n_stations"]
+    triangles = find_triangles(obs["station_ids"], n_stations)
+    quadrangles = find_quadrangles(obs["station_ids"], n_stations)
 
-    triangles, tri_stations = find_triangles(station_ids, n_stations)
-    quadrangles, quad_stations = find_quadrangles(station_ids, n_stations)
+    # Compute closure quantities from corrupted visibilities
+    vis = obs["vis_corrupt"]
+    cphase = compute_closure_phases(vis, obs["station_ids"], triangles)
+    logcamp = compute_log_closure_amplitudes(vis, obs["station_ids"], quadrangles)
+    sigma_cp = closure_phase_sigma(obs["sigma_vis"], vis, obs["station_ids"], triangles)
+    sigma_lca = closure_amplitude_sigma(obs["sigma_vis"], vis, obs["station_ids"], quadrangles)
 
-    cphases = compute_closure_phases(vis, triangles, station_ids)
-    log_camps = compute_log_closure_amplitudes(vis, quadrangles)
-    sigma_cp = closure_phase_sigma(vis, noise_per_vis, triangles)
-    sigma_logca = closure_amplitude_sigma(vis, noise_per_vis, quadrangles)
-
-    closure_data = {
-        "cphases": cphases,
-        "log_camps": log_camps,
-        "sigma_cp": sigma_cp,
-        "sigma_logca": sigma_logca,
+    closure = {
         "triangles": triangles,
         "quadrangles": quadrangles,
-        "tri_stations": tri_stations,
-        "quad_stations": quad_stations,
+        "cphase_rad": cphase,
+        "logcamp": logcamp,
+        "sigma_cp_rad": sigma_cp,
+        "sigma_lca": sigma_lca,
     }
 
-    return obs, closure_data, metadata
+    return obs, closure, meta

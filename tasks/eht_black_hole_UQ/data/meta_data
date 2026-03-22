@@ -1,0 +1,19 @@
+{
+  "npix": 32,
+  "fov_uas": 160.0,
+  "pixel_size_uas": 5.0,
+  "freq_ghz": 230.0,
+  "prior_fwhm_uas": 50.0,
+  "n_flow": 16,
+  "n_epoch": 30000,
+  "batch_size": 32,
+  "lr": 1e-4,
+  "logdet_weight": 1.0,
+  "l1_weight": 1.0,
+  "tsv_weight": 100.0,
+  "flux_weight": 1000.0,
+  "center_weight": 1.0,
+  "mem_weight": 1024.0,
+  "grad_clip": 0.1,
+  "seqfrac": 4
+}

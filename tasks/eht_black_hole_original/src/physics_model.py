@@ -1,364 +1,276 @@
 """
-Closure-Only Forward Model for VLBI Imaging
-=============================================
+Closure Forward Model for VLBI Imaging
+========================================
 
-Extends the standard VLBI forward model (image → complex visibilities) with
-closure quantity operators:
+Implements the DFT-based forward model and closure quantity chi-squared
+terms following ehtim's conventions exactly:
 
-    image → visibilities → closure phases (on triangles)
-                        → closure amplitudes (on quadrangles)
+- DFT sign: +2πi  (ehtim convention since Jan 2017)
+- Pixel grid: xlist = arange(0, -N, -1)*psize + (psize*N)/2 - psize/2
+- Pulse function: triangle pulse (ehtim default)
+- Closure phase χ²: (2/N_CP) Σ (1 - cos(φ_obs - φ_model)) / σ²
+- Log closure amp χ²: (1/N_CA) Σ ((logCA_obs - logCA_model) / σ)²
+- Gradients: CP uses imag(), logCA uses real()
 
-The key property of closure quantities is that station-based gain errors
-cancel exactly, making them robust calibration-independent observables.
-
-Includes analytic gradients of closure chi-squared terms w.r.t. image pixels,
-following Chael et al. (2018), ApJ 857, 23.
-
-Physical model (van Cittert–Zernike theorem):
-    V(u,v) = ∬ I(l,m) exp(-2πi(ul+vm)) dl dm
-
-Discretized: y = A x, where A is the DFT measurement matrix.
+Reference
+---------
+Chael et al. (2018). ApJ 857, 23. Eqs. 11-12.
+ehtim: https://github.com/achael/eht-imaging
 """
 
+import math
 import numpy as np
+
+
+def _triangle_pulse_F(omega, pdim):
+    """Fourier-domain triangle pulse response (matches ehtim)."""
+    if omega == 0:
+        return 1.0
+    return (4.0 / (pdim**2 * omega**2)) * (math.sin((pdim * omega) / 2.0))**2
+
+
+def _ftmatrix(psize, N, uv_coords):
+    """
+    Build DFT matrix matching ehtim's ftmatrix exactly.
+
+    Sign convention: +2πi (agrees with BU data, ehtim since Jan 2017)
+    Pixel grid: xlist = arange(0, -N, -1)*psize + (psize*N)/2 - psize/2
+
+    Parameters
+    ----------
+    psize     : float — pixel size in radians
+    N         : int — image size (N x N)
+    uv_coords : (M, 2) — baseline (u, v) in wavelengths
+
+    Returns
+    -------
+    A : (M, N²) complex DFT matrix
+    """
+    xlist = np.arange(0, -N, -1) * psize + (psize * N) / 2.0 - psize / 2.0
+    ylist = np.arange(0, -N, -1) * psize + (psize * N) / 2.0 - psize / 2.0
+
+    M = len(uv_coords)
+    A = np.zeros((M, N * N), dtype=np.complex128)
+
+    for m in range(M):
+        u, v = uv_coords[m]
+        # Triangle pulse (pixel response)
+        pulse = (_triangle_pulse_F(2 * np.pi * u, psize) *
+                 _triangle_pulse_F(2 * np.pi * v, psize))
+        # Outer product: exp(+2πi * y * v) ⊗ exp(+2πi * x * u)
+        row = pulse * np.outer(
+            np.exp(2j * np.pi * ylist * v),
+            np.exp(2j * np.pi * xlist * u)
+        )
+        A[m] = row.ravel()
+
+    return A
 
 
 class ClosureForwardModel:
     """
-    Forward model with closure quantity operators for VLBI imaging.
-
-    Builds the DFT measurement matrix A and provides:
-    - Standard forward/adjoint operators
-    - Closure phase computation and gradient
-    - Closure amplitude computation and gradient
-    - Closure-only chi-squared and gradient
+    VLBI forward model with closure quantity support.
 
     Parameters
     ----------
-    uv_coords : ndarray, shape (M, 2)
-        Measured (u, v) baseline coordinates in wavelengths.
-    image_size : int
-        Side length N of the N×N image grid.
-    pixel_size_rad : float
-        Angular pixel size in radians.
-    station_ids : ndarray, shape (M, 2), int
-        Station pair indices for each baseline.
-    triangles : ndarray, shape (N_tri, 3), int
-        Baseline indices forming each closure phase triangle.
-    quadrangles : ndarray, shape (N_quad, 4), int
-        Baseline indices [ij, kl, ik, jl] for each closure amplitude quadrangle.
+    uv_coords      : (M, 2) — baseline (u,v) coordinates in wavelengths
+    N               : int — image size (N x N pixels)
+    pixel_size_rad  : float — pixel size in radians
+    triangles       : (N_tri, 3) int — station triples for closure phases
+    quadrangles     : (N_quad, 4) int — station quads for closure amplitudes
+    station_ids     : (M, 2) int — station pair indices (optional, for index-based closure)
     """
 
-    def __init__(
-        self,
-        uv_coords: np.ndarray,
-        image_size: int,
-        pixel_size_rad: float,
-        station_ids: np.ndarray,
-        triangles: np.ndarray,
-        quadrangles: np.ndarray,
-    ):
-        self.uv = uv_coords
-        self.N = image_size
-        self.pixel_size = pixel_size_rad
-        self.M = len(uv_coords)
-        self.station_ids = station_ids
+    def __init__(self, uv_coords, N, pixel_size_rad, triangles, quadrangles,
+                 station_ids=None):
+        self.N = N
+        self.pixel_size_rad = pixel_size_rad
+        self.uv_coords = uv_coords
         self.triangles = triangles
         self.quadrangles = quadrangles
+        self.station_ids = station_ids
 
-        # ── Pixel coordinate grids (centred at zero) ────────────────────
-        idx = np.arange(self.N) - self.N // 2
-        l, m = np.meshgrid(idx * pixel_size_rad, idx * pixel_size_rad)
-        l_flat = l.ravel()
-        m_flat = m.ravel()
-
-        # ── Build measurement matrix A ──────────────────────────────────
-        phase = -2j * np.pi * (
-            uv_coords[:, 0:1] * l_flat[np.newaxis, :] +
-            uv_coords[:, 1:2] * m_flat[np.newaxis, :]
-        )
-        self.A = np.exp(phase)  # (M, N²), complex128
-
-        # ── Pre-extract DFT rows for triangle/quadrangle baselines ──────
-        # For triangles: A1, A2, A3 are DFT matrices for each leg
-        self._tri_A = []
-        for leg in range(3):
-            bl_codes = triangles[:, leg]
-            indices = np.where(bl_codes >= 0, bl_codes, -(bl_codes + 1))
-            self._tri_A.append(self.A[indices])  # (N_tri, N²)
-
-        self._tri_conj = []
-        for leg in range(3):
-            self._tri_conj.append(triangles[:, leg] < 0)  # boolean mask
-
-        # For quadrangles: A for each of the 4 baselines
-        self._quad_A = []
-        for leg in range(4):
-            self._quad_A.append(self.A[quadrangles[:, leg]])
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Core operators
-    # ──────────────────────────────────────────────────────────────────────
+        # Build DFT matrix (matches ehtim ftmatrix)
+        if len(uv_coords) > 0:
+            self.A = _ftmatrix(pixel_size_rad, N, uv_coords)
+        else:
+            self.A = np.zeros((0, N * N), dtype=np.complex128)
 
     def forward(self, image: np.ndarray) -> np.ndarray:
-        """
-        Compute complex visibilities from a sky brightness image.
-
-        Parameters
-        ----------
-        image : ndarray, shape (N, N)
-
-        Returns
-        -------
-        vis : ndarray, shape (M,), complex
-        """
+        """image (N,N) → complex visibilities (M,)"""
         return self.A @ image.ravel()
 
     def adjoint(self, vis: np.ndarray) -> np.ndarray:
-        """
-        Back-project visibilities to image space: x̃ = Aᴴ y.
-
-        Parameters
-        ----------
-        vis : ndarray, shape (M,), complex
-
-        Returns
-        -------
-        image : ndarray, shape (N, N), real
-        """
+        """complex visibilities (M,) → back-projected image (N,N)"""
         return (self.A.conj().T @ vis).real.reshape(self.N, self.N)
 
     def dirty_image(self, vis: np.ndarray) -> np.ndarray:
-        """Normalized dirty image: Aᴴ y / max(Aᴴ 1)."""
+        """Normalized back-projection (dirty image)."""
+        M = len(vis)
+        if M == 0:
+            return np.zeros((self.N, self.N))
         raw = self.adjoint(vis)
-        return raw / self._psf_peak()
+        return raw / M
 
     def psf(self) -> np.ndarray:
-        """Point Spread Function (dirty beam): Aᴴ 1 / max(Aᴴ 1)."""
-        ones = np.ones(self.M, dtype=complex)
-        raw = self.adjoint(ones)
-        return raw / raw.max()
+        """Point spread function (dirty beam)."""
+        M = self.A.shape[0]
+        ones = np.ones(M, dtype=complex)
+        return self.dirty_image(ones)
 
-    def _psf_peak(self) -> float:
-        ones = np.ones(self.M, dtype=complex)
-        return self.adjoint(ones).max()
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Closure phase operators
-    # ──────────────────────────────────────────────────────────────────────
-
-    def model_closure_phases(self, image: np.ndarray) -> np.ndarray:
-        """
-        Compute model closure phases from an image.
-
-        Parameters
-        ----------
-        image : (N, N) ndarray
-
-        Returns
-        -------
-        cphases : (N_tri,) ndarray — closure phases in radians
-        """
-        x = image.ravel()
-        bispec = np.ones(len(self.triangles), dtype=np.complex128)
-        for leg in range(3):
-            v_leg = self._tri_A[leg] @ x
-            if self._tri_conj[leg].any():
-                v_leg = np.where(self._tri_conj[leg], np.conj(v_leg), v_leg)
-            bispec *= v_leg
-        return np.angle(bispec)
-
-    def closure_phase_chisq(self, image: np.ndarray, cphases_obs: np.ndarray,
-                            sigma_cp: np.ndarray) -> float:
-        """
-        Closure phase chi-squared (Eq. 11, Chael 2018).
-
-        χ²_CP = (2/N_CP) Σ_k (1 - cos(φ_k^obs - φ_k^model)) / σ_k²
-
-        Uses von Mises-like form for periodic closure phases.
-
-        Parameters
-        ----------
-        image : (N, N)
-        cphases_obs : (N_tri,) observed closure phases
-        sigma_cp : (N_tri,) closure phase noise
-
-        Returns
-        -------
-        chisq : float
-        """
-        cp_model = self.model_closure_phases(image)
-        N_cp = len(cphases_obs)
-        chisq = (2.0 / N_cp) * np.sum(
-            (1.0 - np.cos(cphases_obs - cp_model)) / sigma_cp ** 2
-        )
-        return float(chisq)
-
-    def closure_phase_chisq_grad(self, image: np.ndarray, cphases_obs: np.ndarray,
-                                 sigma_cp: np.ndarray) -> np.ndarray:
-        """
-        Gradient of closure phase chi-squared w.r.t. image pixels.
-
-        d(χ²_CP)/dx = (-2/N_CP) Im[Σ_j (sin(φ^obs - φ^model)/σ²) / V_j · A_j]
-
-        Parameters
-        ----------
-        image : (N, N)
-        cphases_obs : (N_tri,)
-        sigma_cp : (N_tri,)
-
-        Returns
-        -------
-        grad : (N, N) ndarray
-        """
-        x = image.ravel()
-        N_cp = len(cphases_obs)
-
-        # Compute model visibilities for each triangle leg
-        v_legs = []
-        for leg in range(3):
-            v = self._tri_A[leg] @ x
-            if self._tri_conj[leg].any():
-                v = np.where(self._tri_conj[leg], np.conj(v), v)
-            v_legs.append(v)
-
-        # Model closure phase
-        bispec = v_legs[0] * v_legs[1] * v_legs[2]
-        cp_model = np.angle(bispec)
-
-        pref = np.sin(cphases_obs - cp_model) / sigma_cp ** 2
-
-        grad = np.zeros(self.N * self.N)
-        for leg in range(3):
-            v_leg = v_legs[leg]
-            pt = pref / v_leg  # (N_tri,)
-            if self._tri_conj[leg].any():
-                pt = np.where(self._tri_conj[leg], -np.conj(pt), pt)
-            grad += np.imag(pt @ self._tri_A[leg])  # sum over triangles → (N²,)
-
-        grad *= (-2.0 / N_cp)
-        return grad.reshape(self.N, self.N)
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Log closure amplitude operators
-    # ──────────────────────────────────────────────────────────────────────
-
-    def model_log_closure_amplitudes(self, image: np.ndarray) -> np.ndarray:
-        """
-        Compute model log closure amplitudes from an image.
-
-        log CA = log|V_ij| + log|V_kl| - log|V_ik| - log|V_jl|
-
-        Parameters
-        ----------
-        image : (N, N)
-
-        Returns
-        -------
-        log_camps : (N_quad,) ndarray
-        """
-        x = image.ravel()
-        signs = [1.0, 1.0, -1.0, -1.0]
-        log_ca = np.zeros(len(self.quadrangles))
-        for leg in range(4):
-            v = self._quad_A[leg] @ x
-            log_ca += signs[leg] * np.log(np.maximum(np.abs(v), 1e-30))
-        return log_ca
-
-    def log_closure_amp_chisq(self, image: np.ndarray, log_camps_obs: np.ndarray,
-                              sigma_logca: np.ndarray) -> float:
-        """
-        Log closure amplitude chi-squared (Eq. 12, Chael 2018).
-
-        χ²_logCA = (1/N_CA) Σ_k (logCA_k^obs - logCA_k^model)² / σ_k²
-
-        Parameters
-        ----------
-        image : (N, N)
-        log_camps_obs : (N_quad,)
-        sigma_logca : (N_quad,)
-
-        Returns
-        -------
-        chisq : float
-        """
-        lca_model = self.model_log_closure_amplitudes(image)
-        N_ca = len(log_camps_obs)
-        chisq = (1.0 / N_ca) * np.sum(
-            (log_camps_obs - lca_model) ** 2 / sigma_logca ** 2
-        )
-        return float(chisq)
-
-    def log_closure_amp_chisq_grad(self, image: np.ndarray, log_camps_obs: np.ndarray,
-                                   sigma_logca: np.ndarray) -> np.ndarray:
-        """
-        Gradient of log closure amplitude chi-squared w.r.t. image pixels.
-
-        d(χ²_logCA)/dx = (-2/N_CA) Re[Σ_leg s_leg * pp/V_leg · A_leg]
-
-        where pp = (logCA^obs - logCA^model)/σ², s_leg = +1 for numerator, -1 for denominator.
-
-        Parameters
-        ----------
-        image : (N, N)
-        log_camps_obs : (N_quad,)
-        sigma_logca : (N_quad,)
-
-        Returns
-        -------
-        grad : (N, N) ndarray
-        """
-        x = image.ravel()
-        N_ca = len(log_camps_obs)
-        signs = [1.0, 1.0, -1.0, -1.0]
-
-        v_legs = [self._quad_A[leg] @ x for leg in range(4)]
-        lca_model = np.zeros(N_ca)
-        for leg in range(4):
-            lca_model += signs[leg] * np.log(np.maximum(np.abs(v_legs[leg]), 1e-30))
-
-        pp = (log_camps_obs - lca_model) / sigma_logca ** 2
-
-        grad = np.zeros(self.N * self.N)
-        for leg in range(4):
-            pt = signs[leg] * pp / v_legs[leg]
-            grad += np.real(pt @ self._quad_A[leg])
-
-        grad *= (-2.0 / N_ca)
-        return grad.reshape(self.N, self.N)
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Standard visibility chi-squared (for comparison)
-    # ──────────────────────────────────────────────────────────────────────
+    # ── Visibility chi-squared ──────────────────────────────────────────
 
     def visibility_chisq(self, image: np.ndarray, vis_obs: np.ndarray,
-                         noise_std: float) -> float:
-        """Standard visibility chi-squared: ‖Ax - y‖² / (2σ²M)."""
-        residual = self.forward(image) - vis_obs
-        return float(0.5 * np.sum(np.abs(residual) ** 2) / (noise_std ** 2 * self.M))
+                         sigma: np.ndarray) -> float:
+        """
+        Normalized visibility chi-squared.
+
+        χ² = (1/M) Σ |V_model - V_obs|² / σ²
+        """
+        vis_model = self.forward(image)
+        return float(np.sum(np.abs((vis_model - vis_obs) / sigma)**2) / len(vis_obs))
 
     def visibility_chisq_grad(self, image: np.ndarray, vis_obs: np.ndarray,
-                              noise_std: float) -> np.ndarray:
+                              sigma: np.ndarray) -> np.ndarray:
         """Gradient of visibility chi-squared w.r.t. image."""
-        residual = self.forward(image) - vis_obs
-        grad = (self.A.conj().T @ residual).real / (noise_std ** 2 * self.M)
-        return grad.reshape(self.N, self.N)
+        vis_model = self.forward(image)
+        residual = (vis_model - vis_obs) / sigma**2
+        return (2.0 / len(vis_obs)) * (self.A.conj().T @ residual).real
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Convenience
-    # ──────────────────────────────────────────────────────────────────────
+    # ── Closure phase chi-squared (ehtim-compatible) ────────────────────
 
-    @property
-    def shape(self):
-        """(M, N, N) — number of measurements and image dimensions."""
-        return self.M, self.N, self.N
+    @staticmethod
+    def chisq_cphase_from_uv(imvec, N, psize, uv1, uv2, uv3,
+                              clphase_deg, sigma_deg):
+        """
+        Closure phase chi-squared matching ehtim exactly.
+
+        χ² = (2/N_CP) Σ (1 - cos(φ_obs - φ_model)) / σ²
+
+        Parameters
+        ----------
+        imvec       : (N²,) flat image in Jy/pixel
+        N           : int image size
+        psize       : float pixel size (rad)
+        uv1, uv2, uv3 : (N_CP, 2) UV coords for each triangle leg
+        clphase_deg : (N_CP,) observed closure phases in degrees
+        sigma_deg   : (N_CP,) closure phase sigmas in degrees
+        """
+        DEGREE = np.pi / 180.0
+        clphase = clphase_deg * DEGREE
+        sigma = sigma_deg * DEGREE
+
+        A1 = _ftmatrix(psize, N, uv1)
+        A2 = _ftmatrix(psize, N, uv2)
+        A3 = _ftmatrix(psize, N, uv3)
+
+        i1 = A1 @ imvec
+        i2 = A2 @ imvec
+        i3 = A3 @ imvec
+        clphase_model = np.angle(i1 * i2 * i3)
+
+        chisq = (2.0 / len(clphase)) * np.sum(
+            (1.0 - np.cos(clphase - clphase_model)) / sigma**2
+        )
+        return float(chisq)
+
+    @staticmethod
+    def chisqgrad_cphase_from_uv(imvec, N, psize, uv1, uv2, uv3,
+                                  clphase_deg, sigma_deg):
+        """
+        Gradient of closure phase chi-squared (matches ehtim).
+
+        ∂χ²/∂I = (-2/N_CP) Im[ Σ sin(φ_obs - φ_model)/σ² * (A_k^T / i_k) ]
+        """
+        DEGREE = np.pi / 180.0
+        clphase = clphase_deg * DEGREE
+        sigma = sigma_deg * DEGREE
+
+        A1 = _ftmatrix(psize, N, uv1)
+        A2 = _ftmatrix(psize, N, uv2)
+        A3 = _ftmatrix(psize, N, uv3)
+
+        i1 = A1 @ imvec
+        i2 = A2 @ imvec
+        i3 = A3 @ imvec
+        clphase_model = np.angle(i1 * i2 * i3)
+
+        pref = np.sin(clphase - clphase_model) / sigma**2
+        pt1 = pref / i1
+        pt2 = pref / i2
+        pt3 = pref / i3
+
+        out = pt1 @ A1 + pt2 @ A2 + pt3 @ A3
+        out = (-2.0 / len(clphase)) * np.imag(out)
+        return out
+
+    # ── Log closure amplitude chi-squared (ehtim-compatible) ────────────
+
+    @staticmethod
+    def chisq_logcamp_from_uv(imvec, N, psize, uv1, uv2, uv3, uv4,
+                               log_clamp, sigma):
+        """
+        Log closure amplitude chi-squared matching ehtim.
+
+        χ² = (1/N_CA) Σ ((logCA_obs - logCA_model) / σ)²
+        """
+        A1 = _ftmatrix(psize, N, uv1)
+        A2 = _ftmatrix(psize, N, uv2)
+        A3 = _ftmatrix(psize, N, uv3)
+        A4 = _ftmatrix(psize, N, uv4)
+
+        a1 = np.abs(A1 @ imvec)
+        a2 = np.abs(A2 @ imvec)
+        a3 = np.abs(A3 @ imvec)
+        a4 = np.abs(A4 @ imvec)
+
+        samples = np.log(a1) + np.log(a2) - np.log(a3) - np.log(a4)
+        chisq = np.sum(np.abs((log_clamp - samples) / sigma)**2) / len(log_clamp)
+        return float(chisq)
+
+    @staticmethod
+    def chisqgrad_logcamp_from_uv(imvec, N, psize, uv1, uv2, uv3, uv4,
+                                   log_clamp, sigma):
+        """
+        Gradient of log closure amplitude chi-squared (matches ehtim).
+        """
+        A1 = _ftmatrix(psize, N, uv1)
+        A2 = _ftmatrix(psize, N, uv2)
+        A3 = _ftmatrix(psize, N, uv3)
+        A4 = _ftmatrix(psize, N, uv4)
+
+        i1 = A1 @ imvec
+        i2 = A2 @ imvec
+        i3 = A3 @ imvec
+        i4 = A4 @ imvec
+
+        log_clamp_model = (np.log(np.abs(i1)) + np.log(np.abs(i2))
+                          - np.log(np.abs(i3)) - np.log(np.abs(i4)))
+
+        pp = (log_clamp - log_clamp_model) / sigma**2
+        pt1 = pp / i1
+        pt2 = pp / i2
+        pt3 = -pp / i3
+        pt4 = -pp / i4
+
+        out = pt1 @ A1 + pt2 @ A2 + pt3 @ A3 + pt4 @ A4
+        out = (-2.0 / len(log_clamp)) * np.real(out)
+        return out
+
+    # ── Instance methods using pre-built A matrices ─────────────────────
+
+    def model_closure_phases(self, image: np.ndarray) -> np.ndarray:
+        """Compute model closure phases from image (radians)."""
+        vis = self.forward(image)
+        from src.preprocessing import compute_closure_phases
+        return compute_closure_phases(vis, self.station_ids, self.triangles)
+
+    def model_log_closure_amplitudes(self, image: np.ndarray) -> np.ndarray:
+        """Compute model log closure amplitudes from image."""
+        vis = self.forward(image)
+        from src.preprocessing import compute_log_closure_amplitudes
+        return compute_log_closure_amplitudes(vis, self.station_ids, self.quadrangles)
 
     def __repr__(self):
-        return (
-            f"ClosureForwardModel("
-            f"M={self.M} baselines, "
-            f"N={self.N}×{self.N} image, "
-            f"tri={len(self.triangles)}, "
-            f"quad={len(self.quadrangles)}, "
-            f"pixel={self.pixel_size * 180 / np.pi * 3600 * 1e6:.2f} μas)"
-        )
+        return (f"ClosureForwardModel(M={self.A.shape[0]}, N={self.N}, "
+                f"n_tri={len(self.triangles)}, n_quad={len(self.quadrangles)})")

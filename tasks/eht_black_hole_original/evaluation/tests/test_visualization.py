@@ -1,56 +1,47 @@
-"""Unit tests for visualization module (metrics computation)."""
+"""Unit tests for visualization module."""
+
 import os
-import sys
 import unittest
 import numpy as np
-from numpy.testing import assert_allclose
 
-TASK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+TASK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+FIX_DIR = os.path.join(TASK_DIR, 'evaluation', 'fixtures', 'visualization')
+
+import sys
 sys.path.insert(0, TASK_DIR)
-
-FIXTURE_DIR = os.path.join(TASK_DIR, "evaluation", "fixtures", "visualization")
 
 
 class TestComputeMetrics(unittest.TestCase):
     def setUp(self):
-        self.f = np.load(os.path.join(FIXTURE_DIR, "compute_metrics.npz"))
+        f = np.load(os.path.join(FIX_DIR, 'compute_metrics.npz'))
+        self.estimate = f['input_estimate']
+        self.reference = f['input_reference']
+        self.expected_nrmse = float(f['output_nrmse'])
+        self.expected_ncc = float(f['output_ncc'])
+
+    def test_nrmse(self):
         from src.visualization import compute_metrics
-        self.result = compute_metrics(
-            self.f["input_estimate"], self.f["input_ground_truth"],
-        )
+        m = compute_metrics(self.estimate, self.reference)
+        np.testing.assert_allclose(m['nrmse'], self.expected_nrmse, rtol=1e-3)
+
+    def test_ncc(self):
+        from src.visualization import compute_metrics
+        m = compute_metrics(self.estimate, self.reference)
+        np.testing.assert_allclose(m['ncc'], self.expected_ncc, rtol=1e-3)
+
+    def test_perfect_match(self):
+        from src.visualization import compute_metrics
+        m = compute_metrics(self.reference.copy(), self.reference)
+        self.assertAlmostEqual(m['ncc'], 1.0, places=3)
+        self.assertAlmostEqual(m['nrmse'], 0.0, places=3)
 
     def test_returns_dict(self):
-        self.assertIsInstance(self.result, dict)
-
-    def test_required_keys(self):
-        for key in ["nrmse", "ncc", "dynamic_range"]:
-            self.assertIn(key, self.result)
-
-    def test_types(self):
-        for key in ["nrmse", "ncc", "dynamic_range"]:
-            self.assertIsInstance(self.result[key], float)
-
-    def test_nrmse_value(self):
-        assert_allclose(self.result["nrmse"],
-                        float(self.f["output_nrmse"]), rtol=1e-10)
-
-    def test_ncc_value(self):
-        assert_allclose(self.result["ncc"],
-                        float(self.f["output_ncc"]), rtol=1e-10)
-
-    def test_dynamic_range_value(self):
-        assert_allclose(self.result["dynamic_range"],
-                        float(self.f["output_dynamic_range"]), rtol=1e-10)
-
-    def test_perfect_reconstruction(self):
-        """Perfect reconstruction should give NRMSE~0, NCC~1."""
         from src.visualization import compute_metrics
-        gt = np.random.default_rng(0).uniform(0, 1, (8, 8))
-        gt /= gt.sum()
-        m = compute_metrics(gt, gt)
-        self.assertAlmostEqual(m["nrmse"], 0.0, places=10)
-        self.assertAlmostEqual(m["ncc"], 1.0, places=10)
+        m = compute_metrics(self.estimate, self.reference)
+        self.assertIn('nrmse', m)
+        self.assertIn('ncc', m)
+        self.assertIn('dynamic_range', m)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

@@ -1,27 +1,26 @@
 {
-  "Vis (true)": {
-    "nrmse": 0.6105,
-    "ncc": 0.8195,
-    "dynamic_range": 22.3758
+  "Vis RML (cal)": {
+    "nrmse": 0.2648,
+    "ncc": 0.9669
   },
-  "Vis (corrupted)": {
-    "nrmse": 0.6411,
-    "ncc": 0.7851,
-    "dynamic_range": 19.4699
+  "Amp+CP (cal)": {
+    "nrmse": 0.7043,
+    "ncc": 0.763
   },
-  "CP-only (TV)": {
-    "nrmse": 0.6759,
-    "ncc": 0.777,
-    "dynamic_range": 19.1695
+  "Closure-only (cal)": {
+    "nrmse": 0.8226,
+    "ncc": 0.7523
   },
-  "CP+CA (TV)": {
-    "nrmse": 0.7009,
-    "ncc": 0.7748,
-    "dynamic_range": 19.5147
+  "Vis RML (corrupt)": {
+    "nrmse": 6.7528,
+    "ncc": 0.0001
   },
-  "CP+CA (MEM)": {
-    "nrmse": 1.1627,
-    "ncc": 0.1608,
-    "dynamic_range": 98.6359
+  "Amp+CP (corrupt)": {
+    "nrmse": 2.9204,
+    "ncc": 0.2999
+  },
+  "Closure-only (corrupt)": {
+    "nrmse": 1.0778,
+    "ncc": 0.6044
   }
 }

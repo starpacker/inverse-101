@@ -1,282 +1,152 @@
 """
-Visualization Utilities for Closure-Only EHT Imaging
-=====================================================
+Visualization and Metrics for Closure-Only VLBI Imaging
+========================================================
 
-Provides plots for:
-- uv-coverage
-- Closure phases and amplitudes vs baseline
-- Reconstruction comparisons
-- Gain robustness demonstration (Figures 4-7 equivalent)
+Plotting utilities and image quality metrics.
 """
 
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Single-panel plots
-# ═══════════════════════════════════════════════════════════════════════════
-
-def plot_uv_coverage(uv_coords: np.ndarray, title: str = "EHT uv-Coverage",
-                     ax=None, figsize=(6, 6)):
+def compute_metrics(estimate: np.ndarray, reference: np.ndarray) -> dict:
     """
-    Plot the (u,v)-plane sampling pattern.
+    Compute image quality metrics after flux normalization.
+
+    The estimate is flux-normalized to match the reference total flux
+    before computing metrics.
 
     Parameters
     ----------
-    uv_coords : (M, 2) array [wavelengths]
-    """
-    if ax is None:
-        _, ax = plt.subplots(figsize=figsize)
+    estimate  : (N, N) reconstructed image
+    reference : (N, N) ground truth image
 
-    u, v = uv_coords[:, 0] / 1e9, uv_coords[:, 1] / 1e9
-    ax.scatter(u, v, s=4, c="steelblue", alpha=0.7, label="measured")
-    ax.scatter(-u, -v, s=4, c="salmon", alpha=0.7, label="conjugate")
-    ax.set_xlabel("u  (Gλ)")
-    ax.set_ylabel("v  (Gλ)")
+    Returns
+    -------
+    dict with 'nrmse', 'ncc', 'dynamic_range'
+    """
+    est = estimate.copy()
+    ref = reference.copy()
+
+    # Flux normalization
+    est *= ref.sum() / (est.sum() + 1e-30)
+
+    # NRMSE
+    nrmse = float(np.sqrt(np.mean((est - ref)**2))
+                  / (np.sqrt(np.mean(ref**2)) + 1e-30))
+
+    # Normalized Cross-Correlation
+    ncc = float(np.sum(est * ref)
+               / (np.sqrt(np.sum(est**2)) * np.sqrt(np.sum(ref**2)) + 1e-30))
+
+    # Dynamic range
+    peak = est.max()
+    residual_rms = np.sqrt(np.mean((est - ref)**2)) + 1e-30
+    dynamic_range = float(peak / residual_rms)
+
+    return {
+        'nrmse': round(nrmse, 4),
+        'ncc': round(ncc, 4),
+        'dynamic_range': round(dynamic_range, 4),
+    }
+
+
+def print_metrics_table(metrics_dict: dict):
+    """Print a formatted table of metrics."""
+    print(f"{'Method':<30s} {'NRMSE':>8s} {'NCC':>8s} {'DynRange':>10s}")
+    print('-' * 58)
+    for name, m in metrics_dict.items():
+        print(f"{name:<30s} {m['nrmse']:>8.4f} {m['ncc']:>8.4f} {m['dynamic_range']:>10.2f}")
+
+
+def plot_uv_coverage(uv_coords: np.ndarray, title: str = 'UV Coverage',
+                     ax=None):
+    """Plot (u,v) coverage in Gλ."""
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5.5, 5))
+
+    u_gl = uv_coords[:, 0] / 1e9
+    v_gl = uv_coords[:, 1] / 1e9
+    ax.scatter(u_gl, v_gl, s=6, c='steelblue', alpha=0.7, label='measured')
+    ax.scatter(-u_gl, -v_gl, s=6, c='salmon', alpha=0.7, label='conjugate')
+    ax.set_xlabel('u (Gλ)')
+    ax.set_ylabel('v (Gλ)')
     ax.set_title(title)
-    ax.set_aspect("equal")
-    ax.axhline(0, color="k", lw=0.4, ls="--")
-    ax.axvline(0, color="k", lw=0.4, ls="--")
+    ax.set_aspect('equal')
+    ax.axhline(0, color='k', lw=0.4, ls='--')
+    ax.axvline(0, color='k', lw=0.4, ls='--')
     ax.legend(fontsize=8, markerscale=2)
     return ax
 
 
-def plot_image(image: np.ndarray, title: str = "", ax=None,
-               cmap: str = "afmhot", pixel_size_uas: float = None,
-               vmin=None, vmax=None, figsize=(4.5, 4.5)):
-    """
-    Display a 2D image with optional physical axis labels.
-
-    Parameters
-    ----------
-    pixel_size_uas : float or None
-        Pixel size in microarcseconds. If given, axes are labelled in μas.
-    """
+def plot_image(image: np.ndarray, pixel_size_uas: float = 2.0,
+               title: str = '', cmap: str = 'afmhot', ax=None, vmin=0, vmax=None):
+    """Plot a single image."""
     if ax is None:
-        _, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=(5, 4.5))
 
     N = image.shape[0]
-    if pixel_size_uas is not None:
-        hw = (N / 2) * pixel_size_uas
-        extent = [-hw, hw, -hw, hw]
-        xlabel = ylabel = "μas"
-    else:
-        extent = None
-        xlabel = ylabel = "pixels"
+    fov = N * pixel_size_uas
+    hw = fov / 2
 
-    im = ax.imshow(image, cmap=cmap, origin="lower",
-                   extent=extent, vmin=vmin, vmax=vmax)
-    ax.set_title(title, fontsize=10)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    if vmax is None:
+        vmax = image.max()
+
+    im = ax.imshow(image, cmap=cmap, origin='lower',
+                   extent=[-hw, hw, -hw, hw], vmin=vmin, vmax=vmax)
+    ax.set_xlabel('Relative RA (μas)')
+    ax.set_ylabel('Relative Dec (μas)')
+    ax.set_title(title)
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     return ax
 
 
-def plot_closure_phases(cphases: np.ndarray, tri_indices: np.ndarray = None,
-                        title: str = "Closure Phases", figsize=(8, 4)):
+def plot_comparison(images: dict, ground_truth: np.ndarray,
+                    metrics_dict: dict = None,
+                    pixel_size_uas: float = 2.0,
+                    suptitle: str = 'Reconstruction Comparison'):
     """
-    Plot closure phases vs triangle index.
+    Side-by-side comparison of reconstructions.
 
     Parameters
     ----------
-    cphases : (N_tri,) closure phases in radians
-    tri_indices : (N_tri,) optional x-axis indices
+    images : dict mapping method name → (N,N) image
+    ground_truth : (N,N) reference image
+    metrics_dict : dict mapping method name → metrics dict
     """
-    fig, ax = plt.subplots(figsize=figsize)
-    x = tri_indices if tri_indices is not None else np.arange(len(cphases))
-    ax.scatter(x, np.degrees(cphases), s=6, alpha=0.6, c="steelblue")
-    ax.set_xlabel("Triangle index")
-    ax.set_ylabel("Closure Phase (°)")
-    ax.set_title(title)
-    ax.set_ylim(-185, 185)
-    ax.axhline(0, color="k", lw=0.5, ls="--")
-    plt.tight_layout()
-    return fig
+    N = ground_truth.shape[0]
+    fov = N * pixel_size_uas
+    hw = fov / 2
 
-
-def plot_closure_amplitudes(log_camps: np.ndarray, quad_indices: np.ndarray = None,
-                            title: str = "Log Closure Amplitudes", figsize=(8, 4)):
-    """
-    Plot log closure amplitudes vs quadrangle index.
-
-    Parameters
-    ----------
-    log_camps : (N_quad,) log closure amplitudes
-    """
-    fig, ax = plt.subplots(figsize=figsize)
-    x = quad_indices if quad_indices is not None else np.arange(len(log_camps))
-    ax.scatter(x, log_camps, s=6, alpha=0.6, c="salmon")
-    ax.set_xlabel("Quadrangle index")
-    ax.set_ylabel("log CA")
-    ax.set_title(title)
-    ax.axhline(0, color="k", lw=0.5, ls="--")
-    plt.tight_layout()
-    return fig
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Multi-panel comparison
-# ═══════════════════════════════════════════════════════════════════════════
-
-def plot_comparison(
-    reconstructions: dict,
-    ground_truth: np.ndarray = None,
-    pixel_size_uas: float = None,
-    metrics: dict = None,
-    figsize=None,
-    cmap: str = "afmhot",
-):
-    """
-    Side-by-side comparison of multiple reconstruction methods.
-
-    Parameters
-    ----------
-    reconstructions : {'Method Name': image_ndarray, ...}
-    ground_truth    : reference image (optional)
-    pixel_size_uas  : pixel size in μas for axis labels
-    metrics         : {'Method Name': {'nrmse': ..., 'ncc': ...}, ...}
-    """
-    panels = []
-    titles = []
-
-    if ground_truth is not None:
-        panels.append(ground_truth)
-        titles.append("Ground Truth")
-
-    for name, img in reconstructions.items():
-        panels.append(img)
-        if metrics and name in metrics:
-            m = metrics[name]
-            title = f"{name}\nNRMSE={m.get('nrmse', 0):.3f}  NCC={m.get('ncc', 0):.3f}"
-        else:
-            title = name
-        titles.append(title)
-
+    panels = [('Ground Truth', ground_truth)] + list(images.items())
     n = len(panels)
-    if figsize is None:
-        figsize = (4.2 * n, 4.2)
 
-    fig, axes = plt.subplots(1, n, figsize=figsize)
+    fig, axes = plt.subplots(1, n, figsize=(4.2 * n, 4.2))
     if n == 1:
         axes = [axes]
 
-    for ax, img, title in zip(axes, panels, titles):
-        plot_image(img, title=title, ax=ax, cmap=cmap,
-                   pixel_size_uas=pixel_size_uas, vmin=0, vmax=img.max())
+    for ax, (title, img) in zip(axes, panels):
+        ax.imshow(img, cmap='afmhot', origin='lower',
+                  extent=[-hw, hw, -hw, hw], vmin=0, vmax=img.max())
+        if metrics_dict and title in metrics_dict:
+            m = metrics_dict[title]
+            title = f'{title}\nNRMSE={m["nrmse"]:.3f} NCC={m["ncc"]:.3f}'
+        ax.set_title(title, fontsize=9)
+        ax.set_xlabel('μas')
+        ax.set_ylabel('μas')
 
+    fig.suptitle(suptitle, fontsize=12, y=1.02)
     plt.tight_layout()
     return fig
 
 
-def plot_gain_robustness(
-    results_by_gain: dict,
-    ground_truth: np.ndarray,
-    pixel_size_uas: float = None,
-    figsize=None,
-    cmap: str = "afmhot",
-):
-    """
-    Plot reconstruction quality vs gain error level (Figure 5 equivalent).
-
-    Shows that closure-only imaging is robust to gain errors while
-    traditional visibility imaging degrades.
-
-    Parameters
-    ----------
-    results_by_gain : dict
-        {gain_error: {'Closure': image, 'Visibility': image, ...}, ...}
-    ground_truth : (N, N) reference image
-    """
-    gain_levels = sorted(results_by_gain.keys())
-    methods = list(results_by_gain[gain_levels[0]].keys())
-
-    n_rows = len(gain_levels)
-    n_cols = len(methods) + 1  # +1 for ground truth column
-
-    if figsize is None:
-        figsize = (4 * n_cols, 4 * n_rows)
-
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
-    if n_rows == 1:
-        axes = axes[np.newaxis, :]
-
-    for row, gain in enumerate(gain_levels):
-        # Ground truth
-        plot_image(ground_truth, title=f"Truth (gain={gain:.0%})",
-                   ax=axes[row, 0], cmap=cmap,
-                   pixel_size_uas=pixel_size_uas, vmin=0)
-        for col, method in enumerate(methods):
-            img = results_by_gain[gain][method]
-            m = compute_metrics(img, ground_truth)
-            plot_image(
-                img,
-                title=f"{method}\nNRMSE={m['nrmse']:.3f}",
-                ax=axes[row, col + 1], cmap=cmap,
-                pixel_size_uas=pixel_size_uas, vmin=0,
-            )
-
-    plt.tight_layout()
-    return fig
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Metrics
-# ═══════════════════════════════════════════════════════════════════════════
-
-def compute_metrics(estimate: np.ndarray, ground_truth: np.ndarray) -> dict:
-    """
-    Compute standard image-quality metrics.
-
-    Metrics are computed after normalising the estimate to match the total
-    flux of the ground truth.
-
-    Parameters
-    ----------
-    estimate     : (N, N) reconstructed image
-    ground_truth : (N, N) reference image
-
-    Returns
-    -------
-    dict with keys: 'nrmse', 'ncc', 'dynamic_range'
-    """
-    est_sum = estimate.sum()
-    if est_sum > 0:
-        est = estimate * (ground_truth.sum() / est_sum)
-    else:
-        est = estimate.copy()
-
-    nrmse = float(
-        np.sqrt(np.mean((est - ground_truth) ** 2))
-        / (np.sqrt(np.mean(ground_truth ** 2)) + 1e-30)
-    )
-
-    ncc = float(
-        np.sum(est * ground_truth)
-        / (np.sqrt(np.sum(est ** 2)) * np.sqrt(np.sum(ground_truth ** 2)) + 1e-30)
-    )
-
-    threshold = 0.02 * ground_truth.max()
-    background = est[ground_truth < threshold]
-    rms_bg = float(np.std(background)) if background.size > 0 else 1e-30
-    dynamic_range = float(est.max() / (rms_bg + 1e-30))
-
-    return {"nrmse": nrmse, "ncc": ncc, "dynamic_range": dynamic_range}
-
-
-def print_metrics_table(metrics: dict):
-    """Print a formatted table of reconstruction metrics."""
-    header = f"{'Method':<30} {'NRMSE':>8} {'NCC':>8} {'Dyn. Range':>12}"
-    print(header)
-    print("-" * len(header))
-    for name, m in metrics.items():
-        print(
-            f"{name:<30} "
-            f"{m['nrmse']:>8.4f} "
-            f"{m['ncc']:>8.4f} "
-            f"{m['dynamic_range']:>12.1f}"
-        )
+def plot_gain_robustness(cal_metrics: dict, cor_metrics: dict):
+    """Print calibrated vs corrupted metrics table."""
+    print(f"{'Method':<25s} {'Calibrated':>18s} {'Corrupted':>18s}")
+    print(f"{'':25s} {'NRMSE':>8s} {'NCC':>8s}   {'NRMSE':>8s} {'NCC':>8s}")
+    print('-' * 63)
+    for name in cal_metrics:
+        mc = cal_metrics[name]
+        mg = cor_metrics.get(name, {'nrmse': float('nan'), 'ncc': float('nan')})
+        print(f"{name:<25s} {mc['nrmse']:>8.4f} {mc['ncc']:>8.4f}   "
+              f"{mg['nrmse']:>8.4f} {mg['ncc']:>8.4f}")

@@ -6,6 +6,12 @@ Creates a synthetic M87*-like black hole dataset with realistic
 station-based gain errors, so that closure quantities differ from
 calibrated visibilities.
 
+Telescope properties (location, SEFD) are based on the EHT 2017
+campaign.  UV coordinates are computed using astropy for proper
+Earth-rotation synthesis (hour-angle via Greenwich Mean Sidereal Time,
+WGS84 ellipsoid baseline geometry).  Per-baseline thermal noise is
+derived from station SEFDs.
+
 Usage
 -----
     python -c "from src.generate_data import generate_dataset; generate_dataset()"
@@ -20,6 +26,37 @@ import sys
 import os
 import json
 import numpy as np
+
+from astropy.time import Time
+import astropy.units as u
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EHT 2017 telescope array
+# ═══════════════════════════════════════════════════════════════════════════
+
+EHT_TELESCOPES = {
+    "ALMA": {"x_m":  2225061.164, "y_m": -5440057.370, "z_m": -2481681.150, "sefd_jy":   90},
+    "APEX": {"x_m":  2225039.530, "y_m": -5441197.630, "z_m": -2479303.360, "sefd_jy": 3500},
+    "JCMT": {"x_m": -5464584.680, "y_m": -2493001.170, "z_m":  2150653.980, "sefd_jy": 6000},
+    "SMA":  {"x_m": -5464523.400, "y_m": -2493147.080, "z_m":  2150611.750, "sefd_jy": 4900},
+    "SMT":  {"x_m": -1828796.200, "y_m": -5054406.800, "z_m":  3427865.200, "sefd_jy": 5000},
+    "LMT":  {"x_m":  -768713.964, "y_m": -5988541.798, "z_m":  2063275.947, "sefd_jy":  600},
+    "PV":   {"x_m":  5088967.900, "y_m":  -301681.600, "z_m":  3825015.800, "sefd_jy": 1400},
+    "SPT":  {"x_m":        0.010, "y_m":        0.010, "z_m": -6359609.700, "sefd_jy": 5000},
+}
+"""EHT 2017 station properties at 230 GHz.
+
+Source: https://github.com/achael/eht-imaging/blob/main/arrays/EHT2017.txt
+
+Keys
+----
+x_m, y_m, z_m : float
+    Geocentric Cartesian (ITRS/ECEF) coordinates in metres.
+sefd_jy : float
+    System Equivalent Flux Density in Janskys (lower = more sensitive).
+    SEFD values are per-polarisation (Stokes RR or LL).
+"""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -39,7 +76,7 @@ def make_ring_image(
     Parameters
     ----------
     N : int
-        Image size (N × N pixels).
+        Image size (N x N pixels).
     ring_radius_frac : float
         Ring radius as fraction of image half-width.
     ring_width_frac : float
@@ -74,78 +111,136 @@ def make_ring_image(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Synthetic uv-coverage
+# UV-coverage via astropy
 # ═══════════════════════════════════════════════════════════════════════════
 
 def simulate_eht_uv_coverage(
-    source_dec_deg: float = 12.39,
+    source_ra_deg: float = 187.7059,
+    source_dec_deg: float = 12.3911,
+    obs_start_utc: str = "2017-04-06T00:00:00",
     obs_duration_hours: float = 6.0,
     n_time_steps: int = 15,
     freq_ghz: float = 230.0,
 ) -> tuple:
     """
-    Simulate EHT uv-coverage with station pair information.
+    Simulate EHT uv-coverage using astropy for proper coordinate transforms.
+
+    Station positions are given in ITRS/ECEF Cartesian coordinates (from
+    eht-imaging EHT2017.txt).  Hour angles are computed via astropy's
+    Greenwich Mean Sidereal Time.
+
+    Parameters
+    ----------
+    source_ra_deg : float
+        Right ascension of the source in degrees (default: M87*).
+    source_dec_deg : float
+        Declination of the source in degrees.
+    obs_start_utc : str
+        UTC start time of the observation (ISO-8601).
+    obs_duration_hours : float
+        Total observation duration in hours.
+    n_time_steps : int
+        Number of time samples across the observation.
+    freq_ghz : float
+        Observing frequency in GHz.
 
     Returns
     -------
-    uv_coords : (M, 2) ndarray in wavelengths
-    station_ids : (M, 2) int ndarray — station pair for each baseline
+    uv_coords : (M, 2) ndarray
+        Baseline (u, v) coordinates in wavelengths.
+    station_ids : (M, 2) int ndarray
+        Station pair indices for each baseline measurement.
     n_stations : int
+        Number of stations in the array.
+    timestamps : (M,) ndarray
+        Modified Julian Date for each visibility sample.
+    sefds : (n_stations,) ndarray
+        SEFD in Janskys for each station.
+    station_names : list of str
+        Station name for each index.
     """
-    telescopes = {
-        "ALMA":  (-23.023, -67.755),
-        "APEX":  (-23.006, -67.759),
-        "JCMT":  (19.822, -155.477),
-        "SMA":   (19.824, -155.455),
-        "IRAM":  (37.066,  -3.392),
-        "LMT":   (18.986, -97.315),
-        "SMT":   (32.701, -109.892),
-        "SPT":   (-89.991,   0.000),
-        "NOEMA": (44.634,   5.908),
-    }
-
-    R_earth = 6_371_000.0
-    wavelength = 3e8 / (freq_ghz * 1e9)
-
-    def lonlat_to_ecef(lat_deg, lon_deg):
-        lat = np.deg2rad(lat_deg)
-        lon = np.deg2rad(lon_deg)
-        return R_earth * np.array([
-            np.cos(lat) * np.cos(lon),
-            np.cos(lat) * np.sin(lon),
-            np.sin(lat),
-        ])
-
-    positions = {
-        name: lonlat_to_ecef(lat, lon)
-        for name, (lat, lon) in telescopes.items()
-    }
-    names = list(positions.keys())
-    n_stations = len(names)
+    wavelength = 3e8 / (freq_ghz * 1e9)  # metres
     dec = np.deg2rad(source_dec_deg)
+    ra_rad = np.deg2rad(source_ra_deg)
 
-    ha_arr = np.deg2rad(
-        np.linspace(
-            -obs_duration_hours / 2 * 15.0,
-             obs_duration_hours / 2 * 15.0,
-            n_time_steps,
-        )
-    )
+    # --- Station positions (ECEF from EHT2017.txt) -----------------------
+    names = list(EHT_TELESCOPES.keys())
+    n_stations = len(names)
+    sefds = np.array([EHT_TELESCOPES[n]["sefd_jy"] for n in names], dtype=np.float64)
 
+    xyz = np.array([
+        [EHT_TELESCOPES[n]["x_m"], EHT_TELESCOPES[n]["y_m"], EHT_TELESCOPES[n]["z_m"]]
+        for n in names
+    ])  # (n_stations, 3)
+
+    # --- Observation times ------------------------------------------------
+    t_start = Time(obs_start_utc, scale="utc")
+    dt_hours = np.linspace(0, obs_duration_hours, n_time_steps)
+    times = t_start + dt_hours * u.hour  # Time array
+
+    # Greenwich Mean Sidereal Time → hour angle
+    gmst_rad = np.array([
+        t.sidereal_time("mean", "greenwich").rad for t in times
+    ])
+    ha_arr = gmst_rad - ra_rad  # Greenwich Hour Angle of the source
+
+    # --- Compute baselines and project to (u, v) -------------------------
     uv_list = []
     sid_list = []
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            B = positions[names[j]] - positions[names[i]]
-            for ha in ha_arr:
-                u = np.sin(ha) * B[0] + np.cos(ha) * B[1]
-                v = (-np.sin(dec) * np.cos(ha) * B[0]
-                     + np.sin(dec) * np.sin(ha) * B[1]
-                     + np.cos(dec) * B[2])
-                uv_list.append([u / wavelength, v / wavelength])
-                sid_list.append([i, j])
+    ts_list = []
 
-    return np.array(uv_list), np.array(sid_list, dtype=np.int64), n_stations
+    for i in range(n_stations):
+        for j in range(i + 1, n_stations):
+            B = xyz[j] - xyz[i]  # baseline vector (ITRS, metres)
+            for k, ha in enumerate(ha_arr):
+                u_val = (np.sin(ha) * B[0] + np.cos(ha) * B[1]) / wavelength
+                v_val = (
+                    -np.sin(dec) * np.cos(ha) * B[0]
+                    + np.sin(dec) * np.sin(ha) * B[1]
+                    + np.cos(dec) * B[2]
+                ) / wavelength
+                uv_list.append([u_val, v_val])
+                sid_list.append([i, j])
+                ts_list.append(times[k].mjd)
+
+    uv_coords = np.array(uv_list)
+    station_ids = np.array(sid_list, dtype=np.int64)
+    timestamps = np.array(ts_list)
+
+    return uv_coords, station_ids, n_stations, timestamps, sefds, names
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Per-baseline thermal noise from SEFDs
+# ═══════════════════════════════════════════════════════════════════════════
+
+def compute_sefd_noise(
+    station_ids: np.ndarray,
+    sefds: np.ndarray,
+    eta: float = 0.88,
+    bandwidth_hz: float = 2e9,
+    tau_int: float = 10.0,
+) -> np.ndarray:
+    """
+    Per-baseline thermal noise from station SEFDs.
+
+    σ_ij = (1/η) sqrt(SEFD_i SEFD_j) / sqrt(2 Δν τ)
+
+    Parameters
+    ----------
+    station_ids : (M, 2) int ndarray
+    sefds : (n_stations,) ndarray  — SEFD in Jy
+    eta : float — quantization efficiency (0.88 for 2-bit)
+    bandwidth_hz : float — recording bandwidth in Hz
+    tau_int : float — integration time in seconds
+
+    Returns
+    -------
+    noise_std_per_vis : (M,) ndarray — 1-σ thermal noise per visibility (Jy)
+    """
+    sefd_i = sefds[station_ids[:, 0]]
+    sefd_j = sefds[station_ids[:, 1]]
+    return (1.0 / eta) * np.sqrt(sefd_i * sefd_j) / np.sqrt(2.0 * bandwidth_hz * tau_int)
 
 
 def apply_station_gains(
@@ -220,22 +315,28 @@ def _build_measurement_matrix(uv_coords, N, pixel_size_rad):
 def generate_dataset(
     N: int = 64,
     pixel_size_uas: float = 2.0,
-    snr: float = 20.0,
     gain_amp_error: float = 0.2,
     gain_phase_error_deg: float = 30.0,
+    eta: float = 0.88,
+    bandwidth_hz: float = 2e9,
+    tau_int: float = 10.0,
     seed: int = 42,
     save_dir: str = "data",
 ) -> dict:
     """
     Generate and save a complete synthetic EHT dataset with gain corruption.
 
+    Per-baseline noise is derived from telescope SEFDs (not a single SNR).
+
     Parameters
     ----------
     N : int — image size
     pixel_size_uas : float — pixel size in microarcseconds
-    snr : float — per-visibility signal-to-noise ratio
     gain_amp_error : float — fractional amplitude gain error
     gain_phase_error_deg : float — phase gain error in degrees
+    eta : float — quantization efficiency
+    bandwidth_hz : float — recording bandwidth in Hz
+    tau_int : float — integration time in seconds
     seed : int — random seed
     save_dir : str — output directory
 
@@ -248,28 +349,35 @@ def generate_dataset(
     uas_to_rad = np.pi / (180.0 * 3600.0 * 1e6)
     pixel_size_rad = pixel_size_uas * uas_to_rad
 
-    print(f"Generating {N}×{N} synthetic M87* image ...")
+    print(f"Generating {N}x{N} synthetic M87* image ...")
     image = make_ring_image(N=N)
 
-    print("Simulating EHT uv-coverage ...")
-    uv_coords, station_ids, n_stations = simulate_eht_uv_coverage()
+    print("Simulating EHT uv-coverage (astropy) ...")
+    uv_coords, station_ids, n_stations, timestamps, sefds, station_names = \
+        simulate_eht_uv_coverage()
     M = len(uv_coords)
     print(f"  -> {M} baselines, {n_stations} stations")
+    for i, name in enumerate(station_names):
+        t = EHT_TELESCOPES[name]
+        print(f"     {name:>5s}  SEFD = {t['sefd_jy']:>5.0f} Jy")
 
     print("Computing visibilities ...")
     A = _build_measurement_matrix(uv_coords, N, pixel_size_rad)
     vis_true = A @ image.ravel()
 
-    print(f"Adding noise (SNR = {snr}) ...")
-    signal_rms = np.sqrt(np.mean(np.abs(vis_true) ** 2))
-    noise_std = signal_rms / snr
-    noise_std_per_vis = np.full(M, noise_std)
-    noise = noise_std * (
+    print("Adding SEFD-based thermal noise ...")
+    noise_std_per_vis = compute_sefd_noise(
+        station_ids, sefds, eta=eta, bandwidth_hz=bandwidth_hz, tau_int=tau_int,
+    )
+    noise = noise_std_per_vis * (
         rng.standard_normal(M) + 1j * rng.standard_normal(M)
     ) / np.sqrt(2)
     vis_true_noisy = vis_true + noise
+    median_noise = float(np.median(noise_std_per_vis))
+    print(f"  noise range: {noise_std_per_vis.min():.4e} – {noise_std_per_vis.max():.4e} Jy")
+    print(f"  median noise: {median_noise:.4e} Jy")
 
-    print(f"Applying gain errors (amp={gain_amp_error:.0%}, phase={gain_phase_error_deg}°) ...")
+    print(f"Applying gain errors (amp={gain_amp_error:.0%}, phase={gain_phase_error_deg} deg) ...")
     vis_corrupted, gains = apply_station_gains(
         vis_true_noisy, station_ids, n_stations,
         amp_error=gain_amp_error,
@@ -284,20 +392,27 @@ def generate_dataset(
         uv_coords=uv_coords,
         station_ids=station_ids,
         noise_std_per_vis=noise_std_per_vis,
+        timestamps=timestamps,
         gains=gains,
+        sefds=sefds,
+        station_names=station_names,
     )
 
     metadata = {
         "N": N,
         "pixel_size_uas": pixel_size_uas,
         "pixel_size_rad": pixel_size_rad,
-        "noise_std": float(noise_std),
+        "noise_std": median_noise,
         "freq_ghz": 230.0,
-        "source_dec_deg": 12.39,
+        "source_ra_deg": 187.7059,
+        "source_dec_deg": 12.3911,
+        "obs_start_utc": "2017-04-06T00:00:00",
         "obs_duration_hours": 6.0,
         "n_baselines": M,
         "n_stations": n_stations,
-        "snr": snr,
+        "eta": eta,
+        "bandwidth_hz": bandwidth_hz,
+        "tau_int": tau_int,
         "gain_amp_error": gain_amp_error,
         "gain_phase_error_deg": gain_phase_error_deg,
     }
@@ -312,6 +427,7 @@ def generate_dataset(
             uv_coords=uv_coords,
             station_ids=station_ids,
             noise_std_per_vis=noise_std_per_vis,
+            timestamps=timestamps,
         )
 
         with open(os.path.join(save_dir, "meta_data"), "w") as f:
@@ -326,9 +442,7 @@ def generate_dataset(
         print(f"  image shape   : {image.shape}")
         print(f"  baselines     : {M}")
         print(f"  stations      : {n_stations}")
-        print(f"  pixel size    : {pixel_size_uas} μas")
-        print(f"  noise_std     : {noise_std:.4e}")
-        print(f"  gain errors   : amp={gain_amp_error:.0%}, phase={gain_phase_error_deg}°")
+        print(f"  pixel size    : {pixel_size_uas} uas")
 
     dataset["metadata"] = metadata
     return dataset
