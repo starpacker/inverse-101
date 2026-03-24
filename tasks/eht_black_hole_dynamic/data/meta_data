@@ -1,0 +1,30 @@
+{
+  "N": 30,
+  "pixel_size_uas": 3.4,
+  "pixel_size_rad": 1.6483665157724224e-11,
+  "n_frames": 12,
+  "obs_duration_hours": 6.0,
+  "total_flux": 2.0,
+  "rotation_deg": 90.0,
+  "base_angle_deg": 220.0,
+  "freq_ghz": 230.0,
+  "source_ra_deg": 266.41684,
+  "source_dec_deg": -28.99219,
+  "source_name": "SgrA*",
+  "obs_start_utc": "2017-04-06T00:00:00",
+  "n_stations": 8,
+  "station_names": [
+    "ALMA",
+    "APEX",
+    "JCMT",
+    "SMA",
+    "SMT",
+    "LMT",
+    "PV",
+    "SPT"
+  ],
+  "eta": 0.88,
+  "bandwidth_hz": 2000000000.0,
+  "tau_int": 10.0,
+  "baselines_per_frame": 28
+}
