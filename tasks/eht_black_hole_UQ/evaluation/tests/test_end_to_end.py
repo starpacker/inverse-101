@@ -25,13 +25,15 @@ class TestEndToEnd(unittest.TestCase):
          prior_image, flux_const, metadata) = prepare_data(
             os.path.join(TASK_DIR, "data"))
 
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         # Use reduced epochs for testing (enough to see loss decrease)
         solver = DPISolver(
             npix=metadata["npix"],
             n_flow=4,  # fewer flows for speed
             n_epoch=200,  # enough for loss to decrease
             batch_size=8,
-            device=torch.device("cpu"),
+            device=device,
         )
 
         cls.result = solver.reconstruct(

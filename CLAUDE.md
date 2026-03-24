@@ -37,7 +37,7 @@ tasks/<task_name>/
 │   ├── visualization.py       # Plotting utilities and metrics
 │   └── generate_data.py       # Optional: synthetic data generation
 ├── notebooks/
-│   └── <task_name>.ipynb      # End-to-end tutorial (loads pretrained model)
+│   └── <task_name>.ipynb      # **Required** end-to-end tutorial notebook (user review interface)
 └── evaluation/
     ├── reference_outputs/     # Pretrained checkpoints, samples, ground truth, metrics.json
     ├── fixtures/              # Per-function test fixtures
@@ -75,7 +75,25 @@ Cleaning follows a **test-driven** process. Never rewrite code first and hope it
 3. **Clean the code** — restructure into our `src/` layout. Run parity tests after each change; fix any discrepancies immediately. Do not proceed to the next stage until all parity tests pass.
 4. **Generate reference outputs** — from the trained original model, produce reference checkpoints (model weights, loss history), posterior samples/statistics, ground truth, and `metrics.json` for `evaluation/reference_outputs/`.
 5. **Write unit tests and fixtures** — per-function tests using `evaluation/fixtures/`.
-6. **Write the notebook** — the notebook loads pretrained weights from `evaluation/reference_outputs/` so it runs in seconds and produces paper-quality results. Include optional commented-out code for training from scratch.
+6. **Write the notebook** (`notebooks/<task_name>.ipynb`) — this is the **primary user-facing deliverable** and must always be generated as the final step of cleaning. The notebook serves as the interface for users to review, validate, and critique the implementation. Requirements:
+   - Loads precomputed results from `evaluation/reference_outputs/` so it **runs in seconds** without heavy computation.
+   - Contains all key visualizations: ground truth, reconstructions, comparison figures, metrics tables/charts.
+   - Includes **commented-out code** for running the full pipeline from scratch (so users can reproduce).
+   - Uses the cleaned `src/` modules (not the original library) to demonstrate the implementation works.
+   - Should be self-contained and tell a clear story: problem → data → method → results → conclusion.
+   - **Verify the notebook executes without errors** by running `jupyter nbconvert --execute` before finishing.
+   - **Never call `matplotlib.use('Agg')` in `src/` modules** — it locks the backend globally and prevents `%matplotlib inline` from working in notebooks. Only set the backend in `main.py` (which runs headless). Library code in `src/` should just `import matplotlib.pyplot as plt` without forcing a backend.
+
+### Completion checklist
+
+Before considering a task "done", verify every item:
+
+- [ ] `python main.py` runs to completion
+- [ ] `python -m pytest evaluation/tests/ -v` — all tests pass
+- [ ] `notebooks/<task_name>.ipynb` exists and executes without errors
+- [ ] `evaluation/reference_outputs/metrics.json` exists with expected metrics
+- [ ] `README.md`, `plan/approach.md`, `plan/design.md` exist
+- [ ] `requirements.txt` lists all dependencies
 
 ### Code extraction
 - **Copy and adapt from reference repos** — clone the reference repo, extract relevant functions, and fit them to our directory structure. Preserve original algorithm logic faithfully; do not rewrite algorithms from scratch.
@@ -85,6 +103,7 @@ Cleaning follows a **test-driven** process. Never rewrite code first and hope it
 
 ### Data
 - If real observation data is unavailable, **generate synthetic data** via `src/generate_data.py`. Results should be qualitatively similar to the paper figures, not necessarily identical.
+- **Coordinate convention consistency** — `generate_data.py` must use the exact same pixel coordinate convention (e.g., half-pixel offset, axis direction) as `physics_model.py`. A mismatch causes correct amplitudes but wrong phases, yielding χ²/DOF orders of magnitude too high. Always verify by round-tripping: forward-model the ground truth with `physics_model.py`, compare to generated visibilities, and check χ²/DOF ≈ 1.
 - Keep all existing reference materials (PDFs, `reference_website_github.md`) in each task folder.
 
 ### Testing

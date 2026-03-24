@@ -156,5 +156,200 @@ class TestDPISolverSample(unittest.TestCase):
         self.assertEqual(stats['std'].shape, (8, 8))
 
 
+class TestImgLogscale(unittest.TestCase):
+    """Test learnable log-scale factor."""
+
+    def setUp(self):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.solvers import Img_logscale
+        self.Img_logscale = Img_logscale
+
+    def test_initial_scale_value(self):
+        scale = self.Img_logscale(scale=0.5)
+        output = torch.exp(scale.forward())
+        np.testing.assert_allclose(output.item(), 0.5, rtol=1e-5)
+
+    def test_initial_scale_one(self):
+        scale = self.Img_logscale(scale=1.0)
+        output = torch.exp(scale.forward())
+        np.testing.assert_allclose(output.item(), 1.0, rtol=1e-5)
+
+    def test_parameter_is_learnable(self):
+        scale = self.Img_logscale(scale=1.0)
+        params = list(scale.parameters())
+        self.assertEqual(len(params), 1)
+        self.assertEqual(params[0].shape, (1,))
+
+    def test_gradient_flows(self):
+        scale = self.Img_logscale(scale=1.0)
+        out = torch.exp(scale.forward())
+        loss = (out - 2.0) ** 2
+        loss.backward()
+        self.assertIsNotNone(scale.log_scale.grad)
+        self.assertNotEqual(scale.log_scale.grad.item(), 0.0)
+
+
+class TestRealNVPFixture(unittest.TestCase):
+    """Test RealNVP produces exact deterministic outputs with fixed weights."""
+
+    @classmethod
+    def setUpClass(cls):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.solvers import RealNVP
+
+        fixture_path = os.path.join(FIXTURE_DIR, "realnvp.npz")
+        state_path = os.path.join(FIXTURE_DIR, "realnvp_state_dict.pt")
+        if not os.path.exists(fixture_path):
+            raise unittest.SkipTest("Solver fixtures not generated yet")
+
+        cls.fixture = np.load(fixture_path, allow_pickle=False)
+        cls.model = RealNVP(64, n_flow=4, affine=True, seqfrac=4)
+        cls.model.load_state_dict(torch.load(state_path, map_location="cpu"))
+        cls.model.eval()
+
+    def test_reverse_output_values(self):
+        z = torch.tensor(self.fixture['input_z'], dtype=torch.float32)
+        with torch.no_grad():
+            x, logdet = self.model.reverse(z)
+        np.testing.assert_allclose(
+            x.numpy(), self.fixture['output_reverse_x'], rtol=1e-5, atol=1e-6)
+
+    def test_reverse_logdet_values(self):
+        z = torch.tensor(self.fixture['input_z'], dtype=torch.float32)
+        with torch.no_grad():
+            _, logdet = self.model.reverse(z)
+        np.testing.assert_allclose(
+            logdet.numpy(), self.fixture['output_reverse_logdet'], rtol=1e-5, atol=1e-6)
+
+    def test_forward_output_values(self):
+        x = torch.tensor(self.fixture['output_reverse_x'], dtype=torch.float32)
+        with torch.no_grad():
+            z, logdet = self.model.forward(x)
+        np.testing.assert_allclose(
+            z.numpy(), self.fixture['output_forward_z'], rtol=1e-5, atol=1e-6)
+
+    def test_forward_logdet_values(self):
+        x = torch.tensor(self.fixture['output_reverse_x'], dtype=torch.float32)
+        with torch.no_grad():
+            _, logdet = self.model.forward(x)
+        np.testing.assert_allclose(
+            logdet.numpy(), self.fixture['output_forward_logdet'], rtol=1e-5, atol=1e-6)
+
+
+class TestAffineCouplingFixture(unittest.TestCase):
+    """Test AffineCoupling produces exact deterministic outputs with fixed weights."""
+
+    @classmethod
+    def setUpClass(cls):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.solvers import AffineCoupling
+
+        fixture_path = os.path.join(FIXTURE_DIR, "affine_coupling.npz")
+        state_path = os.path.join(FIXTURE_DIR, "affine_coupling_state_dict.pt")
+        if not os.path.exists(fixture_path):
+            raise unittest.SkipTest("Solver fixtures not generated yet")
+
+        cls.fixture = np.load(fixture_path, allow_pickle=False)
+        cls.coupling = AffineCoupling(64, seqfrac=4, affine=True, batch_norm=True)
+        cls.coupling.load_state_dict(torch.load(state_path, map_location="cpu"))
+        cls.coupling.eval()
+
+    def test_forward_output_values(self):
+        x = torch.tensor(self.fixture['input_x'], dtype=torch.float32)
+        with torch.no_grad():
+            z, logdet = self.coupling(x)
+        np.testing.assert_allclose(
+            z.numpy(), self.fixture['output_z'], rtol=1e-5, atol=1e-6)
+
+    def test_forward_logdet_values(self):
+        x = torch.tensor(self.fixture['input_x'], dtype=torch.float32)
+        with torch.no_grad():
+            _, logdet = self.coupling(x)
+        np.testing.assert_allclose(
+            logdet.numpy(), self.fixture['output_logdet'], rtol=1e-5, atol=1e-6)
+
+
+class TestImgLogscaleFixture(unittest.TestCase):
+    """Test Img_logscale deterministic output from fixture."""
+
+    @classmethod
+    def setUpClass(cls):
+        fixture_path = os.path.join(FIXTURE_DIR, "img_logscale.npz")
+        if not os.path.exists(fixture_path):
+            raise unittest.SkipTest("Solver fixtures not generated yet")
+        cls.fixture = np.load(fixture_path, allow_pickle=False)
+
+    def test_exp_logscale_value(self):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.solvers import Img_logscale
+        scale_val = float(self.fixture['config_scale'])
+        logscale = Img_logscale(scale=scale_val)
+        output = torch.exp(logscale.forward()).item()
+        np.testing.assert_allclose(
+            output, float(self.fixture['output_exp_logscale']), rtol=1e-5)
+
+
+class TestDPISolverReconstruct(unittest.TestCase):
+    """Test DPI solver training (reduced epochs, auto-detect GPU)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.preprocessing import prepare_data
+        from src.solvers import DPISolver
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        (obs, obs_data, closure_indices, nufft_params,
+         prior_image, flux_const, metadata) = prepare_data(
+            os.path.join(TASK_DIR, "data"))
+
+        solver = DPISolver(
+            npix=metadata["npix"],
+            n_flow=4,
+            n_epoch=200,
+            batch_size=8,
+            device=device,
+        )
+
+        cls.result = solver.reconstruct(
+            obs_data, closure_indices, nufft_params, prior_image, flux_const)
+        cls.solver = solver
+        cls.metadata = metadata
+
+    def test_loss_history_exists(self):
+        self.assertIn('loss_history', self.result)
+
+    def test_loss_history_length(self):
+        self.assertEqual(len(self.result['loss_history']['total']), 200)
+
+    def test_loss_history_keys(self):
+        expected_keys = {'total', 'cphase', 'logca', 'visamp', 'logdet',
+                         'flux', 'tsv', 'center', 'mem', 'l1'}
+        self.assertEqual(set(self.result['loss_history'].keys()), expected_keys)
+
+    def test_loss_decreases(self):
+        """Loss should generally decrease (compare first 20 vs last 20 epochs)."""
+        losses = self.result['loss_history']['total']
+        initial_mean = np.mean(losses[:20])
+        final_mean = np.mean(losses[-20:])
+        self.assertLess(final_mean, initial_mean)
+
+    def test_returns_model(self):
+        self.assertIn('img_generator', self.result)
+        self.assertIn('logscale_factor', self.result)
+
+    def test_can_sample_after_training(self):
+        samples = self.solver.sample(n_samples=5)
+        npix = self.metadata['npix']
+        self.assertEqual(samples.shape, (5, npix, npix))
+        self.assertTrue(np.all(samples >= 0))
+
+
 if __name__ == "__main__":
     unittest.main()

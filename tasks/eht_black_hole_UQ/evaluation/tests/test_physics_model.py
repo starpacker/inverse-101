@@ -137,6 +137,12 @@ class TestLossImagePriors(unittest.TestCase):
         np.testing.assert_allclose(
             loss.detach().numpy(), self.fixture['output_tsv'], rtol=1e-5)
 
+    def test_tv(self):
+        from src.physics_model import Loss_TV
+        loss = Loss_TV(self.img)
+        np.testing.assert_allclose(
+            loss.detach().numpy(), self.fixture['output_tv'], rtol=1e-5)
+
     def test_flux(self):
         from src.physics_model import Loss_flux
         flux = float(self.fixture['config_flux'])
@@ -151,6 +157,70 @@ class TestLossImagePriors(unittest.TestCase):
         loss = loss_fn(self.img)
         np.testing.assert_allclose(
             loss.detach().numpy(), self.fixture['output_center'], rtol=1e-5)
+
+    def test_cross_entropy(self):
+        from src.physics_model import Loss_cross_entropy
+        prior_im = torch.tensor(self.fixture['input_prior_im'], dtype=torch.float32)
+        loss = Loss_cross_entropy(prior_im, self.img)
+        np.testing.assert_allclose(
+            loss.detach().numpy(), self.fixture['output_cross_entropy'], rtol=1e-5)
+
+
+class TestLossVisDiff(unittest.TestCase):
+    """Test complex visibility loss function."""
+
+    def setUp(self):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.physics_model import Loss_vis_diff
+        self.fixture = np.load(os.path.join(FIXTURE_DIR, "loss_vis_diff.npz"),
+                               allow_pickle=False)
+        self.loss_fn = Loss_vis_diff(self.fixture['input_sigma'], torch.device("cpu"))
+
+    def test_output_value(self):
+        y_true = torch.tensor(self.fixture['input_true'], dtype=torch.float32)
+        y_pred = torch.tensor(self.fixture['input_pred'], dtype=torch.float32)
+        loss = self.loss_fn(y_true, y_pred)
+        np.testing.assert_allclose(
+            loss.detach().numpy(), self.fixture['output_loss'], rtol=1e-5)
+
+
+class TestLossLogampDiff(unittest.TestCase):
+    """Test log visibility amplitude loss function."""
+
+    def setUp(self):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.physics_model import Loss_logamp_diff
+        self.fixture = np.load(os.path.join(FIXTURE_DIR, "loss_logamp_diff.npz"),
+                               allow_pickle=False)
+        self.loss_fn = Loss_logamp_diff(self.fixture['input_sigma'], torch.device("cpu"))
+
+    def test_output_value(self):
+        y_true = torch.tensor(self.fixture['input_true'], dtype=torch.float32)
+        y_pred = torch.tensor(self.fixture['input_pred'], dtype=torch.float32)
+        loss = self.loss_fn(y_true, y_pred)
+        np.testing.assert_allclose(
+            loss.detach().numpy(), self.fixture['output_loss'], rtol=1e-5)
+
+
+class TestLossVisampDiff(unittest.TestCase):
+    """Test visibility amplitude squared difference loss function."""
+
+    def setUp(self):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.physics_model import Loss_visamp_diff
+        self.fixture = np.load(os.path.join(FIXTURE_DIR, "loss_visamp_diff.npz"),
+                               allow_pickle=False)
+        self.loss_fn = Loss_visamp_diff(self.fixture['input_sigma'], torch.device("cpu"))
+
+    def test_output_value(self):
+        y_true = torch.tensor(self.fixture['input_true'], dtype=torch.float32)
+        y_pred = torch.tensor(self.fixture['input_pred'], dtype=torch.float32)
+        loss = self.loss_fn(y_true, y_pred)
+        np.testing.assert_allclose(
+            loss.detach().numpy(), self.fixture['output_loss'], rtol=1e-5)
 
 
 if __name__ == "__main__":

@@ -74,7 +74,7 @@ JSON file with imaging and training parameters:
 - `npix` = 32: image size (32×32 pixels)
 - `fov_uas` = 160.0: field of view in microarcseconds
 - `n_flow` = 16: number of Real-NVP flow blocks
-- `n_epoch` = 30000: training epochs
+- `n_epoch` = 10000: training epochs
 - `batch_size` = 32: mini-batch size
 - `lr` = 1e-4: Adam learning rate
 - `logdet_weight` = 1.0: entropy term weight

@@ -25,8 +25,8 @@ os.makedirs(os.path.join(FIXTURE_BASE, "visualization"), exist_ok=True)
 def generate_preprocessing_fixtures():
     print("Generating preprocessing fixtures...")
     from src.preprocessing import (
-        load_observation, load_metadata, extract_closure_indices,
-        compute_nufft_params, build_prior_image
+        load_observation, load_ground_truth, load_metadata,
+        extract_closure_indices, compute_nufft_params, build_prior_image
     )
 
     # load_observation
@@ -65,6 +65,11 @@ def generate_preprocessing_fixtures():
              output_prior=prior,
              output_flux_const=np.array(flux_const))
 
+    # load_ground_truth
+    gt = load_ground_truth("data", npix=32, fov_uas=160.0)
+    np.savez(os.path.join(FIXTURE_BASE, "preprocessing", "load_ground_truth.npz"),
+             output_image=gt)
+
     print("  Done.")
     return obs_data, closure, nufft, prior, flux_const
 
@@ -73,7 +78,9 @@ def generate_physics_model_fixtures(obs_data, closure, nufft):
     print("Generating physics_model fixtures...")
     from src.physics_model import (
         NUFFTForwardModel,
-        Loss_angle_diff, Loss_logca_diff2, Loss_l1, Loss_TSV, Loss_flux, Loss_center,
+        Loss_angle_diff, Loss_logca_diff2, Loss_vis_diff, Loss_logamp_diff,
+        Loss_visamp_diff, Loss_l1, Loss_TSV, Loss_TV, Loss_flux, Loss_center,
+        Loss_cross_entropy,
     )
 
     device = torch.device("cpu")
@@ -134,13 +141,51 @@ def generate_physics_model_fixtures(obs_data, closure, nufft):
     flux_val = Loss_flux(1.0)(test_img_batch)
     center_val = Loss_center(device, center=15.5, dim=32)(test_img_batch)
 
+    tv_val = Loss_TV(test_img_batch)
+    prior_im = torch.abs(torch.randn(32, 32)) + 0.01
+    ce_val = Loss_cross_entropy(prior_im, test_img_batch)
+
     np.savez(os.path.join(FIXTURE_BASE, "physics_model", "loss_priors.npz"),
              input_image=test_img,
              output_l1=l1_val.detach().numpy(),
              output_tsv=tsv_val.detach().numpy(),
+             output_tv=tv_val.detach().numpy(),
              config_flux=np.array(1.0),
              output_flux=flux_val.detach().numpy(),
-             output_center=center_val.detach().numpy())
+             output_center=center_val.detach().numpy(),
+             input_prior_im=prior_im.numpy(),
+             output_cross_entropy=ce_val.detach().numpy())
+
+    # Loss_vis_diff
+    sigma_vis = np.abs(np.random.randn(20).astype(np.float32)) + 0.1
+    vis_true_2d = np.random.randn(2, 20).astype(np.float32)
+    vis_pred_batch = np.random.randn(4, 2, 20).astype(np.float32)
+    loss_vis_fn = Loss_vis_diff(sigma_vis, device)
+    loss_vis_val = loss_vis_fn(torch.tensor(vis_true_2d), torch.tensor(vis_pred_batch))
+    np.savez(os.path.join(FIXTURE_BASE, "physics_model", "loss_vis_diff.npz"),
+             input_sigma=sigma_vis, input_true=vis_true_2d,
+             input_pred=vis_pred_batch,
+             output_loss=loss_vis_val.detach().numpy())
+
+    # Loss_logamp_diff
+    sigma_amp = np.abs(np.random.randn(20).astype(np.float32)) + 0.1
+    amp_true = np.abs(np.random.randn(4, 20).astype(np.float32)) + 0.1
+    amp_pred = np.abs(amp_true + np.random.randn(4, 20).astype(np.float32) * 0.01) + 0.01
+    loss_logamp_fn = Loss_logamp_diff(sigma_amp, device)
+    loss_logamp_val = loss_logamp_fn(torch.tensor(amp_true), torch.tensor(amp_pred))
+    np.savez(os.path.join(FIXTURE_BASE, "physics_model", "loss_logamp_diff.npz"),
+             input_sigma=sigma_amp, input_true=amp_true, input_pred=amp_pred,
+             output_loss=loss_logamp_val.detach().numpy())
+
+    # Loss_visamp_diff
+    sigma_va = np.abs(np.random.randn(20).astype(np.float32)) + 0.1
+    va_true = np.abs(np.random.randn(4, 20).astype(np.float32)) + 0.1
+    va_pred = va_true + np.random.randn(4, 20).astype(np.float32) * 0.1
+    loss_va_fn = Loss_visamp_diff(sigma_va, device)
+    loss_va_val = loss_va_fn(torch.tensor(va_true), torch.tensor(va_pred))
+    np.savez(os.path.join(FIXTURE_BASE, "physics_model", "loss_visamp_diff.npz"),
+             input_sigma=sigma_va, input_true=va_true, input_pred=va_pred,
+             output_loss=loss_va_val.detach().numpy())
 
     print("  Done.")
 
@@ -174,8 +219,65 @@ def generate_visualization_fixtures():
     print("  Done.")
 
 
+def generate_solvers_fixtures():
+    print("Generating solvers fixtures...")
+    from src.solvers import RealNVP, Img_logscale, ActNorm, AffineCoupling, Flow
+
+    # ── RealNVP: fixed weights + fixed input → deterministic output ──
+    # Use small model (ndim=64, n_flow=4) for fixture speed
+    torch.manual_seed(123)
+    model = RealNVP(64, n_flow=4, affine=True, seqfrac=4)
+    model.eval()
+
+    # Save the state_dict as numpy arrays for portability
+    state_dict = {k: v.numpy() for k, v in model.state_dict().items()}
+
+    torch.manual_seed(456)
+    z_input = torch.randn(4, 64)
+
+    with torch.no_grad():
+        x_rev, logdet_rev = model.reverse(z_input)
+        z_fwd, logdet_fwd = model.forward(x_rev)
+
+    np.savez(os.path.join(FIXTURE_BASE, "solvers", "realnvp.npz"),
+             input_z=z_input.numpy(),
+             output_reverse_x=x_rev.numpy(),
+             output_reverse_logdet=logdet_rev.numpy(),
+             output_forward_z=z_fwd.numpy(),
+             output_forward_logdet=logdet_fwd.numpy())
+    # Save state_dict separately (too many keys for savez naming)
+    torch.save(model.state_dict(),
+               os.path.join(FIXTURE_BASE, "solvers", "realnvp_state_dict.pt"))
+
+    # ── AffineCoupling: fixed weights → deterministic output ──
+    torch.manual_seed(789)
+    coupling = AffineCoupling(64, seqfrac=4, affine=True, batch_norm=True)
+    coupling.eval()
+    x_input = torch.randn(4, 64)
+
+    with torch.no_grad():
+        z_coup, logdet_coup = coupling(x_input)
+
+    np.savez(os.path.join(FIXTURE_BASE, "solvers", "affine_coupling.npz"),
+             input_x=x_input.numpy(),
+             output_z=z_coup.numpy(),
+             output_logdet=logdet_coup.numpy())
+    torch.save(coupling.state_dict(),
+               os.path.join(FIXTURE_BASE, "solvers", "affine_coupling_state_dict.pt"))
+
+    # ── Img_logscale: deterministic output ──
+    logscale = Img_logscale(scale=0.5)
+    output_val = torch.exp(logscale.forward()).item()
+    np.savez(os.path.join(FIXTURE_BASE, "solvers", "img_logscale.npz"),
+             config_scale=np.array(0.5),
+             output_exp_logscale=np.array(output_val))
+
+    print("  Done.")
+
+
 if __name__ == "__main__":
     obs_data, closure, nufft, prior, flux_const = generate_preprocessing_fixtures()
     generate_physics_model_fixtures(obs_data, closure, nufft)
+    generate_solvers_fixtures()
     generate_visualization_fixtures()
     print("\nAll fixtures generated successfully!")

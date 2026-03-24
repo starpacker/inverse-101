@@ -353,7 +353,7 @@ class DPISolver:
     seqfrac : int
         Hidden dimension compression factor. Default: 4.
     n_epoch : int
-        Number of training epochs. Default: 30000.
+        Number of training epochs. Default: 10000.
     batch_size : int
         Training mini-batch size. Default: 32.
     lr : float
@@ -376,7 +376,7 @@ class DPISolver:
         Computation device. Auto-detects if None.
     """
 
-    def __init__(self, npix=32, n_flow=16, seqfrac=4, n_epoch=30000,
+    def __init__(self, npix=32, n_flow=16, seqfrac=4, n_epoch=10000,
                  batch_size=32, lr=1e-4, logdet_weight=1.0, l1_weight=1.0,
                  tsv_weight=100.0, flux_weight=1000.0, center_weight=1.0,
                  mem_weight=1024.0, grad_clip=0.1, device=None):

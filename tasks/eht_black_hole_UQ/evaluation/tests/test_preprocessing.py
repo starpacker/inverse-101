@@ -167,5 +167,70 @@ class TestBuildPriorImage(unittest.TestCase):
         np.testing.assert_allclose(self.prior, self.fixture['output_prior'], rtol=1e-6)
 
 
+class TestLoadGroundTruth(unittest.TestCase):
+    """Test ground truth image loading and regridding."""
+
+    def setUp(self):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.preprocessing import load_ground_truth
+        self.gt = load_ground_truth(os.path.join(TASK_DIR, "data"), npix=32, fov_uas=160.0)
+        self.fixture = np.load(os.path.join(FIXTURE_DIR, "load_ground_truth.npz"),
+                               allow_pickle=False)
+
+    def test_shape(self):
+        self.assertEqual(self.gt.shape, (32, 32))
+
+    def test_positive(self):
+        self.assertTrue(np.all(self.gt >= 0))
+
+    def test_nonzero(self):
+        self.assertGreater(self.gt.sum(), 0)
+
+    def test_values(self):
+        np.testing.assert_allclose(self.gt, self.fixture['output_image'], rtol=1e-6)
+
+
+class TestPrepareData(unittest.TestCase):
+    """Test the combined prepare_data wrapper."""
+
+    def setUp(self):
+        import sys
+        sys.path.insert(0, TASK_DIR)
+        from src.preprocessing import prepare_data
+        self.result = prepare_data(os.path.join(TASK_DIR, "data"))
+
+    def test_returns_7_tuple(self):
+        self.assertEqual(len(self.result), 7)
+
+    def test_obs_data_has_vis(self):
+        obs_data = self.result[1]
+        self.assertIn('vis', obs_data)
+
+    def test_closure_indices_has_cphase(self):
+        closure = self.result[2]
+        self.assertIn('cphase_ind_list', closure)
+        self.assertEqual(len(closure['cphase_ind_list']), 3)
+
+    def test_nufft_params_has_ktraj(self):
+        nufft = self.result[3]
+        self.assertIn('ktraj_vis', nufft)
+
+    def test_prior_image_shape(self):
+        prior = self.result[4]
+        metadata = self.result[6]
+        npix = metadata['npix']
+        self.assertEqual(prior.shape, (npix, npix))
+
+    def test_flux_const_positive(self):
+        flux = self.result[5]
+        self.assertGreater(flux, 0)
+
+    def test_metadata_keys(self):
+        metadata = self.result[6]
+        self.assertIn('npix', metadata)
+        self.assertIn('fov_uas', metadata)
+
+
 if __name__ == "__main__":
     unittest.main()
