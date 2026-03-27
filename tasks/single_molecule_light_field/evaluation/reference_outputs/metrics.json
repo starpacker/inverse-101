@@ -1,0 +1,15 @@
+{
+  "n_locs_3d_total": 24543,
+  "n_locs_3d_filtered": 21727,
+  "median_lateral_err_nm": 51.788081890486694,
+  "median_axial_err_nm": 55.325114518434475,
+  "mean_lateral_err_nm": 54.76334577305083,
+  "mean_axial_err_nm": 58.646821208298014,
+  "median_photons": 4455.2229113,
+  "median_n_views": 6.0,
+  "z_range_um": [
+    -3.310966224662884,
+    5.667945397129255
+  ],
+  "total_time_s": 52.7
+}
