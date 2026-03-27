@@ -7,6 +7,45 @@
 SYSTEM_PROMPT = """\
 You are a computational imaging expert implementing a reconstruction pipeline.
 You work inside a Linux container at /workspace.
+Available files: data/ (observations), README.md (problem description).
+
+You can take these actions:
+
+1) WRITE_FILE — create or overwrite a file
+   Action: WRITE_FILE
+   Path: <file path relative to /workspace>
+   Content:
+   <file content — include the ENTIRE file, not just a snippet>
+   END_CONTENT
+
+2) RUN — execute a shell command
+   Action: RUN
+   Command: <shell command>
+
+3) READ_FILE — read a file
+   Action: READ_FILE
+   Path: <file path>
+
+4) DONE — signal that you have finished
+   Action: DONE
+
+Respond in this exact format every turn:
+Thought: <your reasoning>
+Action: <one of WRITE_FILE | RUN | READ_FILE | DONE>
+<action arguments as shown above>
+
+Important rules:
+- Write ONE action per response. Wait for the Observation before continuing.
+- Always write complete files, never partial patches.
+- After writing code, run it to verify correctness.
+- If errors occur, read the error, fix the code, and re-run.
+- Do NOT use invented actions like CHECK, TEST, or ANALYZE. To inspect data, write a script and RUN it.
+"""
+
+# System prompt variant for function mode (mentions evaluation/tests)
+SYSTEM_PROMPT_FUNCTION = """\
+You are a computational imaging expert implementing a reconstruction pipeline.
+You work inside a Linux container at /workspace.
 Available files: data/ (observations), README.md (problem description), \
 evaluation/ (fixtures and tests).
 
@@ -40,6 +79,7 @@ Important rules:
 - Always write complete files, never partial patches.
 - After writing a source file, run its unit tests to verify.
 - If tests fail, read the error, fix the code, and re-run.
+- Do NOT use invented actions like CHECK, TEST, or ANALYZE. To inspect data, write a script and RUN it.
 """
 
 
@@ -153,9 +193,13 @@ plan documents. Signal DONE when both files are written.
 
 
 def end_to_end_impl_prompt(approach: str, design: str) -> str:
-    """Phase 2 of end-to-end: implement all source files."""
+    """Phase 2 of end-to-end: implement all source files.
+
+    The agent is NOT given any test cases.  It must freely implement the full
+    reconstruction pipeline and produce ``output/reconstruction.npy``.
+    """
     return f"""\
-Implement the full pipeline following the plan below.
+Implement the full reconstruction pipeline following the plan below.
 
 == Solution Approach ==
 {approach}
@@ -163,15 +207,28 @@ Implement the full pipeline following the plan below.
 == Code Design ==
 {design}
 
-Implementation order:
-1. Run: ls evaluation/tests/ — to discover which test files exist.
+CRITICAL INSTRUCTIONS — you have limited iterations, so write code immediately:
+1. First, explore the data directory: ls data/ — to understand available files.
 2. Write src/__init__.py (empty module marker).
-3. For each source module listed in the Code Design, implement it and run
-   the corresponding test file. For example, if the design lists
-   src/preprocessing.py, run: python -m pytest evaluation/tests/test_preprocessing.py -v
-4. Write main.py and run: python main.py
-5. Final check: python -m pytest evaluation/tests/ -v
+3. Implement the source modules as described in your code design.
+   You are free to organize your code however you see fit.
+   After writing each module, run a quick sanity check if appropriate
+   (e.g. python -c "from src.preprocessing import ...; print('OK')").
+4. Write main.py — the entry point that runs the full reconstruction pipeline.
+5. Run: python main.py
+   The pipeline MUST produce output/reconstruction.npy containing the
+   reconstructed image as a 2-D numpy array.
 
-After writing each file, run its tests and fix any failures before proceeding \
-to the next file. Signal DONE after all tests pass.
+IMPORTANT: Do NOT spend time exploring or analyzing. Start writing code
+IMMEDIATELY. Use WRITE_FILE to create complete source files. You can read
+data files with READ_FILE if needed, but prioritize writing and running code.
+Each iteration is precious — always include a WRITE_FILE action, not just
+RUN commands for exploration.
+
+Your reconstruction quality will be evaluated by comparing
+output/reconstruction.npy against the ground truth using NRMSE and NCC.
+Focus on producing the best possible reconstruction.
+
+Signal DONE after main.py runs successfully and output/reconstruction.npy
+is saved, or you cannot improve further.
 """

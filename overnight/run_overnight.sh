@@ -15,7 +15,8 @@
 set -uo pipefail
 # NOTE: no -e so that one task failure doesn't stop the rest
 
-REPO_DIR="/home/groot/Documents/PKUlab/imaging-101"
+# Get the repository root directory (assumes script is in overnight/ subdir)
+REPO_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
 PROMPT_DIR="$REPO_DIR/overnight/prompts"
 LOG_DIR="$REPO_DIR/overnight/logs"
 BRANCH="main"

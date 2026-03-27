@@ -18,8 +18,8 @@ import numpy as np
 import torch
 
 TASK_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
-ORIGINAL_DIR = "/home/groot/Documents/PKUlab/DPI/DPItorch"
-DATA_DIR = "/home/groot/Documents/PKUlab/DPI/dataset/interferometry1"
+ORIGINAL_DIR = os.path.join(os.path.dirname(__file__), "..", "reference_code")
+DATA_DIR = os.path.join(TASK_DIR, "data")
 REFERENCE_DIR = os.path.join(TASK_DIR, "evaluation", "reference_outputs")
 PARITY_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures", "parity")
 
@@ -265,7 +265,7 @@ class TestFlowArchitectureParity(unittest.TestCase):
 
 @unittest.skipUnless(
     os.path.exists(os.path.join(REFERENCE_DIR, "model_state_dict.pt")),
-    "Reference outputs not yet generated")
+    "Reference outputs not generated")
 class TestModelLoadParity(unittest.TestCase):
     """Verify reference checkpoint produces identical samples in both codebases."""
 

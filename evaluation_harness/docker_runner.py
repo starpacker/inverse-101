@@ -6,6 +6,8 @@ operates.  When the container is removed all agent-written files vanish —
 the original task directory is never modified.
 """
 
+from __future__ import annotations
+
 import logging
 import subprocess
 import uuid

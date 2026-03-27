@@ -12,20 +12,43 @@ FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures", "physics
 
 
 def _build_forward_model():
-    """Build forward model from fixtures for testing."""
+    """Build forward model from observation data for testing.
+
+    Uses analytical pulse function computation to avoid NFFTInfo/pynfft dependency.
+    """
     import sys
     sys.path.insert(0, TASK_DIR)
-    from src.preprocessing import load_observation, extract_closure_indices, compute_nufft_params
+    from src.preprocessing import load_observation, extract_closure_indices
     from src.physics_model import NUFFTForwardModel
+    import ehtim as eh
+    import ehtim.const_def as ehc
 
     obs_data = load_observation(os.path.join(TASK_DIR, "data"))
     obs = obs_data['obs']
     closure = extract_closure_indices(obs)
-    nufft = compute_nufft_params(obs, 32, 160.0)
+
+    # Compute NUFFT params without NFFTInfo (avoids pynfft hang)
+    fov_uas = 160.0
+    npix = 32
+    fov = fov_uas * eh.RADPERUAS
+    psize = fov / npix
+
+    uv_data = obs.unpack(['u', 'v'])
+    uv = np.hstack((uv_data['u'].reshape(-1, 1), uv_data['v'].reshape(-1, 1)))
+    vu = np.hstack((uv_data['v'].reshape(-1, 1), uv_data['u'].reshape(-1, 1)))
+
+    # Analytical pulsefac for trianglePulse2D: sinc^2(u*psize) * sinc^2(v*psize)
+    pulsefac = np.sinc(uv[:, 0] * psize) ** 2 * np.sinc(uv[:, 1] * psize) ** 2
+    vu_scaled = np.array(vu * psize * 2 * np.pi)
+    ktraj_vis = torch.tensor(vu_scaled.T, dtype=torch.float32).unsqueeze(0)
+    pulsefac_vis = torch.tensor(
+        np.concatenate([np.expand_dims(pulsefac.real, 0),
+                        np.expand_dims(pulsefac.imag, 0)], 0),
+        dtype=torch.float32)
 
     device = torch.device("cpu")
     model = NUFFTForwardModel(
-        32, nufft['ktraj_vis'], nufft['pulsefac_vis'],
+        npix, ktraj_vis, pulsefac_vis,
         [torch.tensor(a, dtype=torch.long) for a in closure['cphase_ind_list']],
         [torch.tensor(a, dtype=torch.float32) for a in closure['cphase_sign_list']],
         [torch.tensor(a, dtype=torch.long) for a in closure['camp_ind_list']],

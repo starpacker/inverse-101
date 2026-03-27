@@ -1,5 +1,7 @@
 """Configuration dataclasses for the evaluation harness."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -11,7 +13,7 @@ class LLMConfig:
     model: str  # e.g. "gpt-4o", "deepseek-chat"
     base_url: str = "https://api.openai.com/v1"
     api_key: str = ""
-    temperature: float = 0.0
+    temperature: float = 0.2
     max_tokens: int = 16384
 
 
@@ -35,3 +37,4 @@ class RunConfig:
     docker_image: str = "imaging101-sandbox"
     timeout_seconds: int = 600
     output_dir: Path = field(default_factory=lambda: Path("results"))
+    log_file: Path | None = None  # Path to save detailed interaction logs

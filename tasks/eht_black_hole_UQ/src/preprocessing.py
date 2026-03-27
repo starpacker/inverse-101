@@ -19,7 +19,9 @@ import torch
 
 import ehtim as eh
 import ehtim.const_def as ehc
-from ehtim.observing.obs_helpers import NFFTInfo
+# pynfft can be imported but NFFTInfo hangs in many environments.
+# Always use the analytical sinc² fallback which is numerically equivalent.
+_HAS_NFFT = False
 
 
 def load_observation(data_dir: str = "data") -> dict:
@@ -256,21 +258,27 @@ def compute_nufft_params(obs, npix: int, fov_uas: float) -> dict:
     uv = np.hstack((obs_data['u'].reshape(-1, 1), obs_data['v'].reshape(-1, 1)))
     vu = np.hstack((obs_data['v'].reshape(-1, 1), obs_data['u'].reshape(-1, 1)))
 
-    # Build a temporary ehtim image to get pulse function info
-    simim = eh.image.make_square(obs, npix, fov)
-    simim.ra = obs.ra
-    simim.dec = obs.dec
-    simim.rf = obs.rf
+    if _HAS_NFFT:
+        # Use ehtim's NFFTInfo for exact pulse function (requires pynfft)
+        simim = eh.image.make_square(obs, npix, fov)
+        simim.ra = obs.ra
+        simim.dec = obs.dec
+        simim.rf = obs.rf
 
-    fft_pad_factor = ehc.FFT_PAD_DEFAULT
-    p_rad = ehc.GRIDDER_P_RAD_DEFAULT
-    npad = int(fft_pad_factor * max(simim.xdim, simim.ydim))
-    nfft_info_vis = NFFTInfo(simim.xdim, simim.ydim, simim.psize,
-                              simim.pulse, npad, p_rad, uv)
-    pulsefac_vis = nfft_info_vis.pulsefac
+        fft_pad_factor = ehc.FFT_PAD_DEFAULT
+        p_rad = ehc.GRIDDER_P_RAD_DEFAULT
+        npad = int(fft_pad_factor * max(simim.xdim, simim.ydim))
+        nfft_info_vis = NFFTInfo(simim.xdim, simim.ydim, simim.psize,
+                                  simim.pulse, npad, p_rad, uv)
+        pulsefac_vis = nfft_info_vis.pulsefac
+    else:
+        # Fallback: analytical pulse function for trianglePulse2D
+        # FT of triangle pulse = sinc^2(u*psize) * sinc^2(v*psize)
+        pulsefac_vis = (np.sinc(uv[:, 0] * psize) ** 2
+                        * np.sinc(uv[:, 1] * psize) ** 2)
 
     # Scale trajectory for torchkbnufft: vu * psize * 2π
-    vu_scaled = np.array(vu * simim.psize * 2 * np.pi)
+    vu_scaled = np.array(vu * psize * 2 * np.pi)
     ktraj_vis = torch.tensor(vu_scaled.T, dtype=torch.float32).unsqueeze(0)
     pulsefac_vis_torch = torch.tensor(
         np.concatenate([np.expand_dims(pulsefac_vis.real, 0),

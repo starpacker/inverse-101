@@ -1,4 +1,5 @@
 tasks/**/evaluation/fixtures/
+<<<<<<< HEAD
 tasks/**/__pycache__/
 
 # Output directories (generated results)
@@ -6,3 +7,33 @@ tasks/**/output/
 
 # Jupyter checkpoints
 **/.ipynb_checkpoints/
+=======
+archive/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# Ignore logs and results
+logs/
+results/
+*.log
+*.pid
+
+# Ignore specific task outputs and large data
+tasks/**/evaluation/reference_outputs/
+tasks/**/data/*.npz
+tasks/**/data/*.fits
+tasks/**/data/*.uvfits
+tasks/**/output/
+tasks/**/notebooks/.ipynb_checkpoints/
+
+# Ignore specific large reports and temporary files created during dev
+CODE_COMPARISON_REPORT.md
+END_TO_END_ANALYSIS_REPORT.md
+demo_interaction_log.md
+demo_logging.sh
+run_preprocessing_eval_gemini.sh
+test_logging_system.py
+logs_interaction_preprocessing_gemini.md
+
+>>>>>>> Enhance evaluation harness with logging, new documentation, and fixes

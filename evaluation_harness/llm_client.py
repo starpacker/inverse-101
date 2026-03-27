@@ -1,5 +1,7 @@
 """Thin OpenAI-compatible chat completions client using requests."""
 
+from __future__ import annotations
+
 import logging
 import time
 from typing import Any
@@ -46,18 +48,21 @@ class LLMClient:
             body["stop"] = stop
 
         # Simple retry: one retry with 5 s backoff
-        for attempt in range(2):
+        for attempt in range(3):
             try:
-                resp = requests.post(url, headers=headers, json=body, timeout=120)
+                resp = requests.post(url, headers=headers, json=body, timeout=600)
+                if resp.status_code != 200:
+                    log.error("LLM API error %d: %s", resp.status_code, resp.text[:500])
                 resp.raise_for_status()
                 data = resp.json()
                 break
             except (requests.RequestException, ValueError) as exc:
-                if attempt == 0:
-                    log.warning("LLM request failed (%s), retrying in 5 s…", exc)
-                    time.sleep(5)
+                if attempt < 2:
+                    wait = 5 * (attempt + 1)
+                    log.warning("LLM request failed (%s), retrying in %d s…", exc, wait)
+                    time.sleep(wait)
                 else:
-                    raise RuntimeError(f"LLM request failed after retry: {exc}") from exc
+                    raise RuntimeError(f"LLM request failed after retries: {exc}") from exc
 
         text = data["choices"][0]["message"]["content"] or ""
         usage = data.get("usage", {})

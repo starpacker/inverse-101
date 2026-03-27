@@ -1,10 +1,13 @@
 """CLI entry point: python -m evaluation_harness run ..."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from .config import LLMConfig, RunConfig, TaskConfig
@@ -50,6 +53,7 @@ def main(argv: list[str] | None = None) -> None:
     run_p.add_argument(
         "--verbose", "-v", action="store_true", help="Enable debug logging"
     )
+    run_p.add_argument("--log-file", help="Path to save detailed interaction logs")
 
     args = parser.parse_args(argv)
 
@@ -73,6 +77,16 @@ def main(argv: list[str] | None = None) -> None:
         print("Error: --api-key or OPENAI_API_KEY env var required", file=sys.stderr)
         sys.exit(1)
 
+    # Determine log file path
+    if args.log_file:
+        log_file = Path(args.log_file)
+    else:
+        # Auto-generate default log path: logs/interactions/<task>_<mode>[_<target>]_<timestamp>.md
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target_suffix = f"_{args.target_function}" if args.target_function else ""
+        log_dir = Path("logs") / "interactions"
+        log_file = log_dir / f"{args.task}_{args.mode}{target_suffix}_{ts}.md"
+
     config = RunConfig(
         llm=LLMConfig(
             model=args.model,
@@ -89,6 +103,7 @@ def main(argv: list[str] | None = None) -> None:
         docker_image=args.docker_image,
         timeout_seconds=args.timeout,
         output_dir=Path(args.output),
+        log_file=log_file,
     )
 
     # Run
@@ -104,7 +119,11 @@ def main(argv: list[str] | None = None) -> None:
     if result.tests_total > 0:
         print(f"Tests:   {result.tests_passed}/{result.tests_total} passed ({result.test_pass_rate:.0%})")
     if result.quality_metrics:
-        print(f"Quality: {json.dumps(result.quality_metrics)}")
+        qm = result.quality_metrics
+        if "error" in qm:
+            print(f"Quality: ERROR — {qm['error']}")
+        else:
+            print(f"Quality: NRMSE={qm.get('nrmse', 'N/A')}, NCC={qm.get('ncc', 'N/A')}")
     print(f"Tokens:  {result.total_tokens} (prompt: {result.prompt_tokens}, completion: {result.completion_tokens})")
     print(f"Time:    {result.wall_time_seconds:.1f}s ({result.iterations} iterations)")
     print("=" * 60)
