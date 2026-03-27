@@ -1,2 +1,8 @@
 tasks/**/evaluation/fixtures/
 tasks/**/__pycache__/
+
+# Output directories (generated results)
+tasks/**/output/
+
+# Jupyter checkpoints
+**/.ipynb_checkpoints/

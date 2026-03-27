@@ -1,0 +1,67 @@
+{
+    "task_name": "light_field_microscope",
+    "description": "Artifact-free 3D deconvolution of light field microscopy data using wave-optics forward model and depth-adaptive anti-aliasing",
+
+    "microscope": {
+        "M": 20,
+        "NA": 0.5,
+        "ftl": 165000,
+        "fobj_computed": "ftl / M = 8250 um",
+        "n": 1.0,
+        "WaveLength": 0.525,
+        "comment": "4f telecentric microscope, 20x/0.5NA objective, tube lens ftl=165mm, emission wavelength 525nm"
+    },
+
+    "mla": {
+        "lensPitch": 150,
+        "fm": 3000,
+        "pixelPitch": 6.5,
+        "gridType": "reg",
+        "focus": "single",
+        "uLensMask": 1,
+        "plenoptic": 1,
+        "comment": "Square-aperture MLA, 150um pitch, 3mm focal length, regular grid, original plenoptic (tube2mla = ftl)"
+    },
+
+    "reconstruction": {
+        "depthRange": [-300, 300],
+        "depthStep": 150,
+        "newSpacingPx": 15,
+        "superResFactor": 5,
+        "niter": 8,
+        "filterFlag": true,
+        "lanczosWindowSize": 4,
+        "comment": "Depth range in um relative to NOP; 5 depth planes; downsample lenslets to 15px spacing; super-res factor 5; 8 EMS iterations with Lanczos-4 anti-aliasing"
+    },
+
+    "synthetic_data": {
+        "n_lenslets": 7,
+        "n_beads": 5,
+        "bead_radius_um": 2.0,
+        "bead_intensity": 1.0,
+        "background": 0.01,
+        "poisson_scale": 1000,
+        "random_seed": 42,
+        "comment": "7x7 lenslet grid with 5 fluorescent beads at various depths (kept for reference)"
+    },
+
+    "usaf_data": {
+        "target_depth": 0,
+        "background": 0.0,
+        "poisson_scale": 1000,
+        "random_seed": 42,
+        "comment": "USAF 1951 resolution target at native object plane (z=0 um); demonstrates RL grid artifacts vs EMS artifact-free reconstruction; 3 bar groups at bw=4,2,1 vox (6,3,1.5 um bars)"
+    },
+
+    "units": {
+        "lengths": "micrometers (um) unless noted",
+        "angles": "radians",
+        "wavelength": "um"
+    },
+
+    "reference": {
+        "paper": "A. Stefanoiu et al., Artifact-free deconvolution in light field microscopy, Optics Express 27(22):31644, 2019",
+        "doi": "10.1364/OE.27.031644",
+        "code": "https://github.com/lambdaloop/pyolaf"
+    }
+}

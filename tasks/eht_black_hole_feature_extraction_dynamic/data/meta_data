@@ -1,0 +1,123 @@
+{
+    "npix": 64,
+    "fov_uas": 120.0,
+    "pixel_size_uas": 1.875,
+    "n_frames": 10,
+    "obs_duration_hr": 8.0,
+    "frame_duration_hr": 0.8,
+    "frame_times_hr": [
+        0.0,
+        0.8,
+        1.6,
+        2.4000000000000004,
+        3.2,
+        4.0,
+        4.800000000000001,
+        5.6000000000000005,
+        6.4,
+        7.2
+    ],
+    "geometric_model": "simple_crescent",
+    "n_gaussian": 0,
+    "r_range": [
+        10.0,
+        40.0
+    ],
+    "width_range": [
+        1.0,
+        40.0
+    ],
+    "total_flux": 0.6,
+    "freq_ghz": 230.0,
+    "source_ra_deg": 187.70593,
+    "source_dec_deg": 12.391123,
+    "obs_start_utc": "2017-04-06T00:00:00",
+    "n_stations": 8,
+    "station_names": [
+        "ALMA",
+        "APEX",
+        "JCMT",
+        "SMA",
+        "SMT",
+        "LMT",
+        "PV",
+        "SPT"
+    ],
+    "bandwidth_hz": 2000000000.0,
+    "tau_int": 10.0,
+    "n_flow": 16,
+    "n_epoch": 5000,
+    "batch_size": 2048,
+    "lr": 0.0001,
+    "logdet_weight": 1.0,
+    "grad_clip": 0.0001,
+    "alpha_divergence": 1.0,
+    "beta": 0.0,
+    "start_order": 4,
+    "decay_rate": 1000,
+    "seqfrac_inv": 4,
+    "data_product": "cphase_logcamp",
+    "sys_noise": 0.02,
+    "ground_truth_per_frame": [
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -130.0
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -121.11111111111111
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -112.22222222222223
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -103.33333333333333
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -94.44444444444444
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -85.55555555555556
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -76.66666666666666
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -67.77777777777777
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -58.888888888888886
+        },
+        {
+            "diameter_uas": 44.0,
+            "width_uas": 8.0,
+            "asymmetry": 0.5,
+            "position_angle_deg": -50.0
+        }
+    ]
+}
