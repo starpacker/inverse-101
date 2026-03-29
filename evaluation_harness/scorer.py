@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
+
 from .agent import AgentResult
 from .config import RunConfig
 from .docker_runner import DockerRunner
@@ -24,6 +26,7 @@ class EvalResult:
     task_name: str = ""
     mode: str = ""
     model: str = ""
+    framework: str = "react"  # "react" | "multi_agent"
     timestamp: str = ""
     # Tests
     tests_total: int = 0
@@ -41,9 +44,12 @@ class EvalResult:
     total_tokens: int = 0
     wall_time_seconds: float = 0.0
     iterations: int = 0
+    llm_calls: int = 0  # Total individual LLM API calls (ReAct: =iterations, Multi-Agent: >>iterations)
     # Agent
     stopped_reason: str = ""
     files_created: list[str] = field(default_factory=list)
+    # Visualization (end-to-end only)
+    visualization_paths: dict[str, str] = field(default_factory=dict)
 
 
 class Scorer:
@@ -61,17 +67,20 @@ class Scorer:
         agent_result: AgentResult,
         llm_usage: dict[str, int],
         wall_time: float,
+        llm_calls: int = 0,
     ) -> EvalResult:
         result = EvalResult(
             task_name=self.config.task.task_name,
             mode=self.config.task.mode,
             model=self.config.llm.model,
+            framework=self.config.framework,
             timestamp=datetime.now(timezone.utc).isoformat(),
             prompt_tokens=llm_usage.get("prompt_tokens", 0),
             completion_tokens=llm_usage.get("completion_tokens", 0),
             total_tokens=llm_usage.get("prompt_tokens", 0) + llm_usage.get("completion_tokens", 0),
             wall_time_seconds=round(wall_time, 2),
             iterations=agent_result.iterations,
+            llm_calls=llm_calls,
             stopped_reason=agent_result.stopped_reason,
             files_created=agent_result.files_written,
         )
@@ -92,6 +101,10 @@ class Scorer:
         # Quality metrics for end-to-end (sole evaluation criterion)
         if self.config.task.mode == "end_to_end":
             result.quality_metrics = self._compute_quality_metrics()
+            # Generate visualization figures
+            result.visualization_paths = self._generate_visualizations(
+                result.quality_metrics, result
+            )
 
         return result
 
@@ -167,13 +180,42 @@ gt_path = "evaluation/reference_outputs/ground_truth.npy"
 if not os.path.exists(out_path):
     print(json.dumps({"error": "output/reconstruction.npy not found"}))
     sys.exit(0)
-out = np.load(out_path)
-gt = np.load(gt_path)
+out = np.load(out_path, allow_pickle=True)
+if out.dtype == object:
+    print(json.dumps({"error": "reconstruction is not a valid numeric array"}))
+    sys.exit(0)
+out = out.astype(np.float64)
+if out.ndim != 2:
+    print(json.dumps({"error": f"reconstruction has wrong dimensions: {out.ndim}"}))
+    sys.exit(0)
+gt = np.load(gt_path).astype(np.float64)
 # Flux-normalize
 out = out * (gt.sum() / (out.sum() + 1e-30))
+# --- NRMSE ---
 nrmse = float(np.linalg.norm(out - gt) / (np.linalg.norm(gt) + 1e-30))
+# --- NCC ---
 ncc = float(np.sum(out * gt) / (np.linalg.norm(out) * np.linalg.norm(gt) + 1e-30))
-print(json.dumps({"nrmse": round(nrmse, 4), "ncc": round(ncc, 4)}))
+# --- MSE ---
+mse = float(np.mean((out - gt) ** 2))
+# --- PSNR ---
+max_val = float(gt.max())
+if mse > 0:
+    psnr = float(20 * np.log10(max_val / np.sqrt(mse)))
+else:
+    psnr = float("inf")
+# --- SSIM (simplified, no skimage dependency) ---
+def _ssim_2d(a, b, data_range):
+    C1 = (0.01 * data_range) ** 2
+    C2 = (0.03 * data_range) ** 2
+    mu_a, mu_b = a.mean(), b.mean()
+    sig_a2, sig_b2 = a.var(), b.var()
+    sig_ab = np.mean((a - mu_a) * (b - mu_b))
+    num = (2 * mu_a * mu_b + C1) * (2 * sig_ab + C2)
+    den = (mu_a**2 + mu_b**2 + C1) * (sig_a2 + sig_b2 + C2)
+    return float(num / den)
+ssim = _ssim_2d(out, gt, data_range=max_val)
+print(json.dumps({"nrmse": round(nrmse, 4), "ncc": round(ncc, 4),
+                   "mse": round(mse, 8), "psnr": round(psnr, 2), "ssim": round(ssim, 4)}))
 """
         output, rc = self.runner.exec(f"python -c '{snippet}'")
         try:
@@ -181,6 +223,77 @@ print(json.dumps({"nrmse": round(nrmse, 4), "ncc": round(ncc, 4)}))
         except (json.JSONDecodeError, IndexError):
             log.warning("Could not parse quality metrics: %s", output)
             return None
+
+    # ------------------------------------------------------------------
+    def _generate_visualizations(
+        self, quality_metrics: dict | None, result: EvalResult
+    ) -> dict[str, str]:
+        """Generate evaluation figures and persist reconstruction.npy.
+
+        Copies the agent's ``output/reconstruction.npy`` from the sandbox
+        into the results directory (so it survives sandbox cleanup), then
+        calls the visualizer to produce comparison figures.
+
+        Returns dict mapping figure name → absolute path string.
+        """
+        import shutil as _shutil
+
+        from .visualizer import generate_eval_figures
+
+        if quality_metrics is None or "error" in quality_metrics:
+            return {}
+
+        # --- Determine output directory for this run's artifacts ---
+        safe_model = result.model.replace("/", "_").replace("\\", "_")
+        run_id = f"{result.task_name}_{result.framework}_{safe_model}"
+        fig_dir = self.config.output_dir / "figures" / run_id
+        fig_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- Copy reconstruction.npy from sandbox to results ---
+        workspace = Path(self.runner.container) if hasattr(self.runner, "container") else None
+        recon_src = workspace / "output" / "reconstruction.npy" if workspace else None
+        recon_dst = fig_dir / "reconstruction.npy"
+
+        if recon_src and recon_src.exists():
+            _shutil.copy2(recon_src, recon_dst)
+            log.info("Saved reconstruction to %s", recon_dst)
+        else:
+            log.warning("reconstruction.npy not found in sandbox — cannot generate figures")
+            return {}
+
+        # --- Load arrays ---
+        gt_path = self.config.task.task_dir / "evaluation" / "reference_outputs" / "ground_truth.npy"
+        if not gt_path.exists():
+            log.warning("ground_truth.npy not found — cannot generate figures")
+            return {}
+
+        try:
+            recon = np.load(str(recon_dst), allow_pickle=True)
+            if recon.dtype == object or recon.ndim != 2:
+                log.warning("reconstruction is not a valid 2D numeric array — cannot generate figures")
+                return {}
+            gt = np.load(str(gt_path))
+        except Exception as e:
+            log.warning("Failed to load arrays for visualization: %s", e)
+            return {}
+
+        # Also save ground truth copy for reference
+        gt_dst = fig_dir / "ground_truth.npy"
+        if not gt_dst.exists():
+            _shutil.copy2(gt_path, gt_dst)
+
+        # --- Generate figures ---
+        run_label = f"{result.framework}_{safe_model}"
+        paths = generate_eval_figures(
+            reconstruction=recon,
+            ground_truth=gt,
+            metrics=quality_metrics,
+            output_dir=fig_dir,
+            run_label=run_label,
+            task_name=result.task_name,
+        )
+
+        return paths
 
     # ------------------------------------------------------------------
     def _evaluate_plan(self) -> dict | None:
@@ -229,7 +342,7 @@ print(json.dumps({"nrmse": round(nrmse, 4), "ncc": round(ncc, 4)}))
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Sanitize model name for filename (replace / with _)
         safe_model = result.model.replace("/", "_").replace("\\", "_")
-        name = f"{result.task_name}_{result.mode}_{safe_model}_{ts}.json"
+        name = f"{result.task_name}_{result.mode}_{result.framework}_{safe_model}_{ts}.json"
         path = output_dir / name
         path.write_text(json.dumps(asdict(result), indent=2))
         log.info("Results saved to %s", path)

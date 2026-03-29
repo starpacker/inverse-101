@@ -54,6 +54,12 @@ def main(argv: list[str] | None = None) -> None:
         "--verbose", "-v", action="store_true", help="Enable debug logging"
     )
     run_p.add_argument("--log-file", help="Path to save detailed interaction logs")
+    run_p.add_argument(
+        "--framework",
+        default="react",
+        choices=["react", "multi_agent"],
+        help="Agent framework: 'react' (single-agent ReAct loop) or 'multi_agent' (Plan→Architect→Code→Judge pipeline)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -104,6 +110,7 @@ def main(argv: list[str] | None = None) -> None:
         timeout_seconds=args.timeout,
         output_dir=Path(args.output),
         log_file=log_file,
+        framework=args.framework,
     )
 
     # Run
@@ -112,10 +119,11 @@ def main(argv: list[str] | None = None) -> None:
 
     # Print summary
     print("\n" + "=" * 60)
-    print(f"Task:    {result.task_name}")
-    print(f"Mode:    {result.mode}")
-    print(f"Model:   {result.model}")
-    print(f"Status:  {result.stopped_reason}")
+    print(f"Task:      {result.task_name}")
+    print(f"Mode:      {result.mode}")
+    print(f"Model:     {result.model}")
+    print(f"Framework: {args.framework}")
+    print(f"Status:    {result.stopped_reason}")
     if result.tests_total > 0:
         print(f"Tests:   {result.tests_passed}/{result.tests_total} passed ({result.test_pass_rate:.0%})")
     if result.quality_metrics:
@@ -123,8 +131,14 @@ def main(argv: list[str] | None = None) -> None:
         if "error" in qm:
             print(f"Quality: ERROR — {qm['error']}")
         else:
-            print(f"Quality: NRMSE={qm.get('nrmse', 'N/A')}, NCC={qm.get('ncc', 'N/A')}")
+            print(f"Quality: NRMSE={qm.get('nrmse', 'N/A')}, NCC={qm.get('ncc', 'N/A')}, "
+                  f"PSNR={qm.get('psnr', 'N/A')}, SSIM={qm.get('ssim', 'N/A')}")
+    if result.visualization_paths:
+        print(f"Figures: {len(result.visualization_paths)} generated")
+        for name, path in result.visualization_paths.items():
+            print(f"  {name}: {path}")
     print(f"Tokens:  {result.total_tokens} (prompt: {result.prompt_tokens}, completion: {result.completion_tokens})")
+    print(f"LLM calls: {result.llm_calls}")
     print(f"Time:    {result.wall_time_seconds:.1f}s ({result.iterations} iterations)")
     print("=" * 60)
 

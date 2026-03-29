@@ -14,7 +14,7 @@ class LLMConfig:
     base_url: str = "https://api.openai.com/v1"
     api_key: str = ""
     temperature: float = 0.2
-    max_tokens: int = 16384
+    max_tokens: int = 32768
 
 
 @dataclass
@@ -38,3 +38,4 @@ class RunConfig:
     timeout_seconds: int = 600
     output_dir: Path = field(default_factory=lambda: Path("results"))
     log_file: Path | None = None  # Path to save detailed interaction logs
+    framework: str = "react"  # "react" | "multi_agent"

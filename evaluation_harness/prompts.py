@@ -1,6 +1,46 @@
 """Prompt templates for each evaluation mode."""
 
 # ---------------------------------------------------------------------------
+# Compact context summary prompt
+# ---------------------------------------------------------------------------
+
+COMPACT_SUMMARY_PROMPT = """\
+You are a technical assistant. Your job is to produce a concise, structured \
+summary of a coding agent's conversation history. This summary will REPLACE \
+the original messages in the agent's context window, so it must preserve ALL \
+critical information needed to continue working effectively.
+
+Analyze the conversation and produce a summary with EXACTLY these sections:
+
+## Current State
+- What files exist and their purpose (list every file written)
+- What is the current implementation approach
+
+## Key Findings
+- Data format discoveries (shapes, dtypes, file contents explored)
+- Important parameter values or constants discovered
+
+## Error History
+- Each distinct error encountered, what caused it, and whether it was resolved
+- Pattern of recurring issues (if any)
+
+## What Works
+- Which parts of the code are verified working
+- Successful test results or command outputs
+
+## What Remains
+- Outstanding bugs or failures not yet fixed
+- Next logical step to take
+
+RULES:
+- Be CONCISE but COMPLETE — every file path, error message, and key number matters.
+- Do NOT include actual file contents (too long) — just describe what each file does.
+- Do NOT include generic advice — only facts from the actual conversation.
+- Total length MUST be under 3000 characters.
+"""
+
+
+# ---------------------------------------------------------------------------
 # Shared system prompt
 # ---------------------------------------------------------------------------
 
@@ -187,6 +227,15 @@ First, create the solution plan:
 == Data Specification ==
 {meta_data}
 
+IMPORTANT CONSTRAINTS:
+- Start by running `ls data/` and reading data files to understand the data.
+- Read `requirements.txt` to know which packages are available.
+- ONLY use packages listed in requirements.txt (typically numpy, scipy, matplotlib).
+  Do NOT plan to use jax, torch, tensorflow, or any unlisted package.
+- Prefer classical optimization (scipy.optimize.minimize with L-BFGS-B) over autodiff.
+- If data contains pre-computed intermediate results, use them directly.
+- Use `Optional[X]` from typing, not `X | None` (Python 3.9 compatibility).
+
 Start by reading any data files to understand the problem, then write both \
 plan documents. Signal DONE when both files are written.
 """
@@ -209,6 +258,7 @@ Implement the full reconstruction pipeline following the plan below.
 
 CRITICAL INSTRUCTIONS — you have limited iterations, so write code immediately:
 1. First, explore the data directory: ls data/ — to understand available files.
+   Also read requirements.txt to know available packages.
 2. Write src/__init__.py (empty module marker).
 3. Implement the source modules as described in your code design.
    You are free to organize your code however you see fit.
@@ -219,11 +269,14 @@ CRITICAL INSTRUCTIONS — you have limited iterations, so write code immediately
    The pipeline MUST produce output/reconstruction.npy containing the
    reconstructed image as a 2-D numpy array.
 
-IMPORTANT: Do NOT spend time exploring or analyzing. Start writing code
-IMMEDIATELY. Use WRITE_FILE to create complete source files. You can read
-data files with READ_FILE if needed, but prioritize writing and running code.
-Each iteration is precious — always include a WRITE_FILE action, not just
-RUN commands for exploration.
+IMPORTANT CONSTRAINTS:
+- ONLY use packages from requirements.txt. Do NOT import jax, torch, tensorflow.
+- Use `Optional[X]` from typing, NOT `X | None` (Python 3.9 compatibility).
+- Use the EXACT data key names from the .npz files. Do NOT guess key names.
+- Do NOT spend time exploring or analyzing. Start writing code IMMEDIATELY.
+- Use WRITE_FILE to create complete source files.
+- Each iteration is precious — always include a WRITE_FILE action, not just
+  RUN commands for exploration.
 
 Your reconstruction quality will be evaluated by comparing
 output/reconstruction.npy against the ground truth using NRMSE and NCC.

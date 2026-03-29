@@ -19,6 +19,7 @@ class LLMClient:
     def __init__(self, config: LLMConfig) -> None:
         self.config = config
         self._total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        self._call_count = 0
 
     # ------------------------------------------------------------------
     def chat(
@@ -47,22 +48,31 @@ class LLMClient:
         if stop:
             body["stop"] = stop
 
-        # Simple retry: one retry with 5 s backoff
-        for attempt in range(3):
+        # Retry with exponential backoff (handles transient 404s, 429s, 502s, etc.)
+        max_retries = 8
+        for attempt in range(max_retries):
             try:
                 resp = requests.post(url, headers=headers, json=body, timeout=600)
                 if resp.status_code != 200:
                     log.error("LLM API error %d: %s", resp.status_code, resp.text[:500])
+                # Retry on transient server/rate-limit errors
+                if resp.status_code in (429, 502, 503, 504) or (resp.status_code == 404 and attempt < max_retries - 1):
+                    wait = min(5 * (2 ** attempt), 120)  # 5, 10, 20, 40, 80, 120, 120, 120
+                    log.warning("Retryable HTTP %d, retrying in %d s… (attempt %d/%d)",
+                                resp.status_code, wait, attempt + 1, max_retries)
+                    time.sleep(wait)
+                    continue
                 resp.raise_for_status()
                 data = resp.json()
                 break
             except (requests.RequestException, ValueError) as exc:
-                if attempt < 2:
-                    wait = 5 * (attempt + 1)
-                    log.warning("LLM request failed (%s), retrying in %d s…", exc, wait)
+                if attempt < max_retries - 1:
+                    wait = min(5 * (2 ** attempt), 120)
+                    log.warning("LLM request failed (%s), retrying in %d s… (attempt %d/%d)",
+                                exc, wait, attempt + 1, max_retries)
                     time.sleep(wait)
                 else:
-                    raise RuntimeError(f"LLM request failed after retries: {exc}") from exc
+                    raise RuntimeError(f"LLM request failed after {max_retries} retries: {exc}") from exc
 
         text = data["choices"][0]["message"]["content"] or ""
         usage = data.get("usage", {})
@@ -72,6 +82,7 @@ class LLMClient:
         }
         self._total_usage["prompt_tokens"] += usage_out["prompt_tokens"]
         self._total_usage["completion_tokens"] += usage_out["completion_tokens"]
+        self._call_count += 1
 
         log.debug(
             "LLM call: +%d prompt, +%d completion tokens",
@@ -85,3 +96,8 @@ class LLMClient:
     def total_usage(self) -> dict[str, int]:
         """Accumulated token counts across all calls."""
         return dict(self._total_usage)
+
+    @property
+    def call_count(self) -> int:
+        """Total number of successful LLM API calls."""
+        return self._call_count

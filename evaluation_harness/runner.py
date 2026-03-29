@@ -10,6 +10,7 @@ from pathlib import Path
 from .agent import Agent, AgentResult
 from .config import RunConfig
 from .llm_client import LLMClient
+from .multi_agent import MultiAgentPipeline
 from .prompts import (
     end_to_end_impl_prompt,
     end_to_end_plan_prompt,
@@ -56,7 +57,7 @@ class BenchmarkRunner:
     VISIBLE_PATHS = {
         "plan": ["README.md", "data"],
         "function": ["README.md", "plan", "evaluation", "data"],
-        "end_to_end": ["README.md", "data"],
+        "end_to_end": ["README.md", "data", "requirements.txt"],
     }
 
     # ------------------------------------------------------------------
@@ -81,7 +82,8 @@ class BenchmarkRunner:
             wall_time = time.time() - t0
 
             scorer = Scorer(self.runner, self.config, llm_client=self.client)
-            result = scorer.score(agent_result, self.client.total_usage, wall_time)
+            result = scorer.score(agent_result, self.client.total_usage, wall_time,
+                                  llm_calls=self.client.call_count)
             scorer.save(result, self.config.output_dir)
             return result
         finally:
@@ -179,6 +181,13 @@ class BenchmarkRunner:
         Scoring is based solely on reconstruction quality (NRMSE / NCC) against
         the reference ground truth — no unit-test pass rate is computed.
         """
+        # Check framework choice
+        if self.config.framework == "multi_agent":
+            return self._run_end_to_end_multi_agent()
+        return self._run_end_to_end_react()
+
+    def _run_end_to_end_react(self) -> AgentResult:
+        """End-to-end using the ReAct single-agent framework."""
         readme = self._read_host_file("README.md")
         meta_data = self._read_host_file("data/meta_data")
 
@@ -204,6 +213,23 @@ class BenchmarkRunner:
         impl_result.files_written = plan_result.files_written + impl_result.files_written
         impl_result.iterations = plan_result.iterations + impl_result.iterations
         return impl_result
+
+    def _run_end_to_end_multi_agent(self) -> AgentResult:
+        """End-to-end using the multi-agent (Plan→Architect→Code→Judge) pipeline."""
+        readme = self._read_host_file("README.md")
+        meta_data = self._read_host_file("data/meta_data")
+        requirements = self._read_host_file("requirements.txt")
+
+        log.info("End-to-end [multi_agent] — running Plan→Architect→Code→Judge pipeline")
+        pipeline = MultiAgentPipeline(
+            client=self.client,
+            runner=self.runner,
+            max_iterations=self.config.max_iterations,
+            log_file=self.config.log_file,
+        )
+        return pipeline.run(
+            task_desc=readme, data_spec=meta_data, requirements=requirements,
+        )
 
     # ------------------------------------------------------------------
     # Helpers

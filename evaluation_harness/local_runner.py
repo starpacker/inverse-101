@@ -60,6 +60,10 @@ class LocalRunner:
             venv_path = self.workspace / ".venv"
             self.exec(f"python -m venv {venv_path}")
             self.exec(f"{venv_path}/bin/pip install -q -r {req}")
+            # Store venv path so exec() can prepend it to PATH
+            self._venv_bin = str(venv_path / "bin")
+        else:
+            self._venv_bin = None
 
     def exec(self, command: str) -> tuple[str, int]:
         """Run *command* inside the workspace directory."""
@@ -77,6 +81,11 @@ class LocalRunner:
             "PYTHONPATH": str(self.workspace),
             "HOME": str(self.workspace),
         }
+        
+        # Prepend venv bin to PATH so `python` resolves to venv Python
+        venv_bin = getattr(self, "_venv_bin", None)
+        if venv_bin:
+            safe_env["PATH"] = venv_bin + ":" + safe_env["PATH"]
         
         try:
             result = subprocess.run(
