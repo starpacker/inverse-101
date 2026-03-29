@@ -85,6 +85,17 @@ Your Goal: Implement a SPECIFIC Python file based on the plan and architecture p
     - Set `options={'maxiter': N, 'disp': True}` with N >= 200
     - Print the final cost and gradient norm after optimization
     - Check `result.success` and print a warning if False
+19. GRADIENT STRATEGY: Prefer calling scipy.optimize.minimize WITHOUT the
+    jac= argument (let scipy compute gradients numerically via finite
+    differences). This is slower but much more reliable than hand-coded
+    analytical gradients. Only pass jac= if the gradient has been verified
+    against finite differences and found to be correct.
+    Example:
+    ```
+    result = minimize(objective, x0, method='L-BFGS-B', bounds=bounds,
+                      options={'maxiter': 500, 'disp': True})
+    ```
+    Do NOT pass jac= unless you are certain the gradient is correct.
 """
 
     def _build_user_prompt(self, context: Dict[str, Any]) -> str:

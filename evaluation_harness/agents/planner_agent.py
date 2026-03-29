@@ -77,6 +77,19 @@ the user's imaging reconstruction task.
 11. **Convergence Monitoring**: Print the objective value every 50 iterations.
     After optimization, print: final cost, gradient norm, number of iterations,
     and whether the optimizer converged. This is essential for diagnosing issues.
+12. **Gradient Strategy — Prefer Numerical Over Analytical**: Analytical
+    gradients are error-prone and a common source of bugs. Plan accordingly:
+    - PREFERRED: Use scipy.optimize.minimize with ONLY the objective function
+      (no jac= argument). L-BFGS-B will compute gradients numerically.
+      This is slower but much more reliable.
+    - ALTERNATIVE: If speed is critical, implement analytical gradients BUT
+      include a runtime verification against finite differences. If the check
+      fails, fall back to numerical gradients (remove jac= argument).
+    - The objective function should be a SINGLE function that takes a flat
+      vector x and returns a scalar cost. Keep it simple — no callbacks,
+      no closure tricks, no complex class hierarchies.
+    - ALWAYS print the objective value at the start and end of optimization
+      so convergence can be verified from the logs.
 
 ### Output Format (Markdown):
 1. **[Problem Formulation]**: Math equation and variable definitions.
