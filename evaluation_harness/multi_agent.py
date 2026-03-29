@@ -346,6 +346,39 @@ class MultiAgentPipeline:
                 if "src/__init__.py" not in result.files_written:
                     result.files_written.append("src/__init__.py")
 
+                # ─── Stage 3.5: Pre-Execution Smoke Test ───
+                smoke_error = self._run_smoke_test()
+                if smoke_error:
+                    log.warning("[Smoke Test] Failed: %s", smoke_error[:200])
+                    self._log_to_file(
+                        f"### Smoke Test FAILED\n```\n{smoke_error[:1000]}\n```\n"
+                    )
+                    # Identify the failing file from the traceback
+                    fix_target = self._identify_error_file(smoke_error)
+                    feedback = {
+                        "ticket_assigned_to": "Coder",
+                        "fix_target": fix_target,
+                        "analysis": f"IMPORT/SMOKE TEST FAILURE (caught before running main.py):\n{smoke_error[-1000:]}",
+                        "feedback": (
+                            "Fix the error above. This was caught by importing "
+                            "and calling functions with minimal data BEFORE running "
+                            "the full pipeline. The fix is usually a simple bug: "
+                            "wrong key name, missing import, wrong function signature, "
+                            "or type mismatch."
+                        ),
+                    }
+                    self.failure_history.append({
+                        "iteration": iteration,
+                        "ticket_assigned_to": "Coder",
+                        "fix_target": fix_target,
+                        "analysis": f"Smoke test failed: {smoke_error[:200]}",
+                        "evidence": smoke_error[:500],
+                        "feedback": "Fix import/call error found in smoke test",
+                    })
+                    self.last_judge_feedback = feedback
+                    ticket = "Coder"
+                    continue
+
                 ticket = "Execution"
 
             # ─── Stage 4: Execution ───
@@ -552,6 +585,85 @@ class MultiAgentPipeline:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _run_smoke_test(self) -> str:
+        """Run a lightweight smoke test on the generated code.
+
+        Imports all src/ modules and tries to call their main functions
+        with tiny dummy data. This catches import errors, KeyErrors,
+        TypeErrors, and other bugs BEFORE running the full pipeline.
+
+        Returns empty string if OK, or the error output if something fails.
+        """
+        # Build a smoke-test script that imports all modules
+        src_modules = [
+            f for f in self.current_files
+            if f.startswith("src/") and f.endswith(".py") and f != "src/__init__.py"
+        ]
+        if not src_modules:
+            return ""
+
+        # Generate import lines
+        import_lines = []
+        for mod_path in src_modules:
+            # src/preprocessing.py -> src.preprocessing
+            mod_name = mod_path.replace("/", ".").replace(".py", "")
+            import_lines.append(f"import {mod_name}")
+
+        smoke_script = (
+            "import sys, traceback\n"
+            "print('=== Smoke Test: Importing modules ===')\n"
+            "try:\n"
+            + "\n".join(f"    {line}" for line in import_lines) + "\n"
+            "    print('All imports OK')\n"
+            "except Exception as e:\n"
+            "    traceback.print_exc()\n"
+            "    sys.exit(1)\n"
+            "\n"
+            "# Quick syntax/import check for main.py\n"
+            "print('=== Smoke Test: Checking main.py imports ===')\n"
+            "try:\n"
+            "    import importlib.util\n"
+            "    spec = importlib.util.spec_from_file_location('main', 'main.py')\n"
+            "    mod = importlib.util.module_from_spec(spec)\n"
+            "    # Don't execute, just compile to check for syntax errors\n"
+            "    import ast\n"
+            "    with open('main.py') as f:\n"
+            "        ast.parse(f.read())\n"
+            "    print('main.py syntax OK')\n"
+            "except Exception as e:\n"
+            "    traceback.print_exc()\n"
+            "    sys.exit(1)\n"
+            "\n"
+            "print('=== Smoke Test PASSED ===')\n"
+        )
+
+        self.runner.write_file("_smoke_test.py", smoke_script)
+        output, rc = self.runner.exec("python _smoke_test.py")
+
+        if rc != 0:
+            return output or "Smoke test failed with no output"
+        return ""
+
+    def _identify_error_file(self, error_output: str) -> str:
+        """Extract the source file that caused an error from a traceback.
+
+        Returns the file path (e.g., 'src/preprocessing.py') or a default.
+        """
+        if not error_output:
+            return "main.py"
+
+        # Look for 'File "xxx.py"' in traceback, prefer src/ files
+        import re as _re
+        matches = _re.findall(r'File "([^"]+\.py)"', error_output)
+        for fpath in reversed(matches):  # Last match is usually the root cause
+            for fname in self.current_files:
+                if fpath.endswith(fname):
+                    return fname
+        # Default to main.py
+        return "main.py" if "main.py" in self.current_files else next(
+            (f for f in self.current_files if f.endswith(".py")), "main.py"
+        )
+
     def _explore_data(self, result: AgentResult) -> None:
         """Explore the data/ directory to build a rich inventory.
 

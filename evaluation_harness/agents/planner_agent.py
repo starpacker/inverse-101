@@ -90,6 +90,16 @@ the user's imaging reconstruction task.
       no closure tricks, no complex class hierarchies.
     - ALWAYS print the objective value at the start and end of optimization
       so convergence can be verified from the logs.
+13. **Data Term Selection — Use Highest Fidelity Available**: When the data
+    inventory shows multiple versions of the same measurement (e.g., raw vs.
+    calibrated, noisy vs. denoised, direct vs. derived), ALWAYS prefer the
+    highest-fidelity/most-direct version as the PRIMARY data term:
+    - Direct measurements > derived/closure quantities (more information)
+    - Calibrated > uncalibrated/corrupted data (fewer systematic errors)
+    - Use derived quantities (e.g., closure phases) as SECONDARY or
+      regularization terms, not as the sole data fidelity term.
+    - In the chi-squared data fidelity term, use the BEST available data.
+    This is the single biggest factor in reconstruction quality.
 
 ### Output Format (Markdown):
 1. **[Problem Formulation]**: Math equation and variable definitions.

@@ -105,7 +105,90 @@
 **Results**:
 | Run | NRMSE | NCC | PSNR | SSIM | Iters | Calls | Notes |
 |-----|-------|-----|------|------|-------|-------|-------|
-| — | — | — | — | — | — | — | Running... |
+| 9a | FAIL | FAIL | — | — | 5 | 34 | max_iterations, no output |
+| 9b | 0.9705 | 0.241 | 18.09 | 0.055 | 1 | 10 | Quick fix only |
+| 9c | 1.0175 | 0.099 | 17.68 | — | 5 | 39 | Convergence detected, max_iter |
+| 9d | FAIL | FAIL | — | — | 5 | 40 | max_iterations, no output |
+
+**Analysis**: v9 changes helped with routing (Judge now correctly sends to Coder) and convergence detection works, but Coder still struggles with gradient correctness. Key insight: **analytical gradients are the #1 bottleneck** — when wrong, NRMSE ~1.0; when avoided, NRMSE ~0.73.
+
+---
+
+### v10 — Numerical Gradient Strategy (2026-03-29)
+
+**Changes** (ALL general-purpose):
+
+1. **Planner Agent — Prefer Numerical Gradients** (`planner_agent.py`)
+   - Added rule 12: Plan to use scipy.optimize.minimize WITHOUT jac= argument
+   - L-BFGS-B computes gradients via finite differences (slower but reliable)
+   - Analytical gradients only if verified against finite differences
+   - **General-purpose?** ✅ Standard numerical optimization advice.
+
+2. **Coder Agent — Gradient Strategy Rule** (`coder_agent.py`)
+   - Added rule 19: Do NOT pass jac= to minimize() unless gradient is verified
+   - Explicit example showing minimize() without jac=
+   - **General-purpose?** ✅ Applies to any scipy-based optimization.
+
+**Results**:
+| Run | NRMSE | NCC | PSNR | SSIM | Iters | Calls | Notes |
+|-----|-------|-----|------|------|-------|-------|-------|
+| 10a | **0.7227** | **0.7114** | **20.65** | **0.5765** | 3 | 21 | **🏆 NEW BEST** |
+| 10b | 0.7355 | 0.694 | 20.50 | 0.5617 | 2 | 12 | Matches v7 best |
+
+**Analysis**: v10a is the new best result! Key factors:
+- Solver uses `minimize()` without `jac=` → numerical gradients via finite differences
+- Multi-round optimization (3 rounds with decreasing regularization)
+- Used amp+cp data terms with corrupted visibilities
+- 3 iterations all had exit_code=1 (KeyError bugs) but quick-fix mechanism saved it
+- v10b used same approach but slightly worse (normal LLM variance)
+
+**Key Insight**: Removing the burden of analytical gradient implementation is the single biggest improvement. The LLM-generated analytical gradients are wrong ~50% of the time, wasting entire iterations.
+
+---
+
+### v11 — Pre-Execution Smoke Test + Data Term Selection (2026-03-29)
+
+**Changes** (ALL general-purpose):
+
+1. **Pre-Execution Smoke Test** (`multi_agent.py`)
+   - New `_run_smoke_test()` method: after Coder writes files, before Execution
+   - Imports all src/ modules to catch ImportError/ModuleNotFoundError early
+   - Checks main.py syntax via AST parse
+   - If smoke test fails → routes directly to Coder (skips full execution + Judge)
+   - Saves ~1 iteration per import-related bug
+   - **General-purpose?** ✅ Applies to any Python pipeline.
+
+2. **Planner Agent — Data Term Selection** (`planner_agent.py`)
+   - Added rule 13: When multiple data versions exist, prefer highest-fidelity
+   - Direct measurements > derived quantities (more information content)
+   - Calibrated > corrupted/uncalibrated (fewer systematic errors)
+   - **General-purpose?** ✅ Standard signal processing principle.
+
+3. **Coder Agent — Data Fidelity Guidance** (`coder_agent.py`)
+   - Added rule 20: Check for calibrated vs corrupted data keys
+   - Prefer *_cal over *_corrupt in chi-squared data fidelity terms
+   - **General-purpose?** ✅ General data quality preference.
+
+**Results**:
+| Run | NRMSE | NCC | PSNR | SSIM | Iters | Calls | Notes |
+|-----|-------|-----|------|------|-------|-------|-------|
+| 11a | — | — | — | — | — | — | Running... |
+
+---
+
+## All Results Summary
+
+| Version | Run | NRMSE ↓ | NCC ↑ | PSNR ↑ | SSIM ↑ | Iters | Calls | Status |
+|---------|-----|---------|-------|--------|--------|-------|-------|--------|
+| v7 | best | 0.7355 | 0.694 | 20.50 | 0.5617 | 1 | 11 | done |
+| v7 | 2nd | 0.7383 | 0.701 | 20.46 | 0.545 | 8 | 99 | done |
+| v8 | 1 | 0.9425 | 0.335 | 18.35 | — | 3 | 32 | done |
+| v9 | a | FAIL | — | — | — | 5 | 34 | max_iter |
+| v9 | b | 0.9705 | 0.241 | 18.09 | 0.055 | 1 | 10 | done |
+| v9 | c | 1.0175 | 0.099 | 17.68 | — | 5 | 39 | max_iter |
+| v9 | d | FAIL | — | — | — | 5 | 40 | max_iter |
+| **v10** | **a** | **0.7227** | **0.7114** | **20.65** | **0.5765** | 3 | 21 | **done 🏆** |
+| v10 | b | 0.7355 | 0.694 | 20.50 | 0.5617 | 2 | 12 | done |
 
 ---
 

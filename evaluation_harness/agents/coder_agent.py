@@ -96,6 +96,14 @@ Your Goal: Implement a SPECIFIC Python file based on the plan and architecture p
                       options={'maxiter': 500, 'disp': True})
     ```
     Do NOT pass jac= unless you are certain the gradient is correct.
+20. DATA FIDELITY TERM: When loading data, check if calibrated/direct
+    measurements are available alongside derived/corrupted ones. If the
+    data inventory shows a key like '*_cal' or '*_calibrated' alongside
+    '*_corrupt' or '*_raw', prefer the calibrated version in the main
+    chi-squared data fidelity term. Direct measurement data (e.g.,
+    visibilities, projections) gives more information than derived
+    quantities (e.g., closure phases, amplitudes-only) and leads to
+    significantly better reconstruction quality.
 """
 
     def _build_user_prompt(self, context: Dict[str, Any]) -> str:
