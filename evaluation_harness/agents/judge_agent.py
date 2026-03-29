@@ -59,12 +59,26 @@ Your Mission: Diagnose the ROOT CAUSE of failure with surgical precision.
 1. NEVER assign to Planner if implementation deviates from plan (that's Coder's fault).
 2. ALWAYS verify implementation fidelity BEFORE blaming Planner.
 3. If the SAME error repeats multiple iterations, suggest a DIFFERENT approach.
-4. Runtime errors (KeyError, TypeError, ValueError, IndexError) are ALMOST ALWAYS
-   the Coder's fault. Only assign to Architect if the function SIGNATURE is wrong
-   (e.g., missing parameter in the def statement), not if the implementation
-   inside the function is incorrect.
+4. **MANDATORY ROUTING RULE — READ CAREFULLY**:
+   Runtime errors are the Coder's fault. This includes ALL of these:
+   KeyError, TypeError, ValueError, IndexError, AttributeError, NameError,
+   ZeroDivisionError, FileNotFoundError, RuntimeError, StopIteration.
+   For ANY of these errors → ticket_assigned_to = "Coder".
+   The ONLY reason to assign to "Architect" is if a function's SIGNATURE
+   (the `def` line itself) is MISSING a parameter. A wrong variable name,
+   wrong dictionary key, wrong array index inside a function body is ALWAYS
+   the Coder's fault, NEVER the Architect's.
+   **If in doubt, assign to Coder.** Architect rewrites ALL files from scratch
+   which is extremely expensive. Coder patches only the broken file.
 5. ALWAYS specify "fix_target" — the exact filename (e.g., "src/solvers.py") where
-   the error originates in the traceback.
+   the error originates in the traceback. Look at the LAST "File" in the traceback.
+6. PREFER "Coder" over "Architect". Reassigning to Architect causes a FULL
+   skeleton regeneration, wasting time. If the error is in the code body
+   (not the function interface), assign to Coder so only the broken file is fixed.
+7. When assigning to Coder, set "fix_target" to the SPECIFIC file that caused
+   the error, not all files. This enables targeted patching.
+8. NEVER assign to "Architect" for: KeyError, TypeError, ValueError, IndexError.
+   These are ALWAYS code-body bugs that the Coder must fix.
 """
 
     def _build_user_prompt(self, context: Dict[str, Any]) -> str:

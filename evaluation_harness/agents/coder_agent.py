@@ -49,6 +49,42 @@ Your Goal: Implement a SPECIFIC Python file based on the plan and architecture p
     only supports box bounds via `bounds=`. Do NOT pass `constraints=` to L-BFGS-B
     (it will be silently ignored). Enforce equality constraints via projection
     or penalty terms in the objective instead.
+
+### Numerical Computing Safety (MANDATORY for all scientific code):
+13. ARRAY INDEXING SAFETY: Before indexing with computed indices, always verify
+    bounds: `idx = np.clip(idx, 0, arr.shape[axis] - 1)`. Never assume array
+    lengths match — use `min(len(a), len(b))` when iterating over paired arrays.
+14. NUMERICAL STABILITY: Add epsilon to all denominators: `x / (y + 1e-10)`.
+    Use `np.log(np.maximum(x, 1e-30))` instead of bare `np.log(x)`.
+    Use `np.exp(np.clip(x, -500, 500))` to prevent overflow.
+    Cast to float64 before accumulating sums: `total = np.float64(0.0)`.
+15. GRADIENT VERIFICATION: If you implement an analytical gradient function,
+    ADD A RUNTIME CHECK wrapped in try/except that compares your gradient
+    to a finite-difference approximation. Print the result but DO NOT crash
+    if it fails:
+    ```
+    try:
+        from scipy.optimize import approx_fprime
+        grad_num = approx_fprime(x0, objective_only, 1e-7)
+        grad_ana = gradient_func(x0)
+        max_err = np.max(np.abs(grad_ana - grad_num))
+        rel_err = max_err / (np.max(np.abs(grad_num)) + 1e-10)
+        print(f"Gradient check: max|ana-num|={max_err:.2e}, relative={rel_err:.2e}")
+    except Exception as e:
+        print(f"Gradient check skipped due to error: {e}")
+    ```
+    This check should print a diagnostic but NEVER crash the program.
+16. SHAPE ASSERTIONS: At key pipeline stages (after loading data, after forward
+    model, after solver output), add assertions:
+    `assert result.shape == expected_shape, f"Expected {expected_shape}, got {result.shape}"`
+17. OUTPUT VALIDATION: Before saving reconstruction.npy, verify:
+    `assert result.ndim == 2, f"Expected 2D, got {result.ndim}D"`
+    `assert np.all(np.isfinite(result)), "Result contains NaN/Inf"`
+    `assert np.std(result) > 1e-15, "Result is constant (solver did not converge)"`
+18. OPTIMIZER CONVERGENCE: When using scipy.optimize.minimize, ALWAYS:
+    - Set `options={'maxiter': N, 'disp': True}` with N >= 200
+    - Print the final cost and gradient norm after optimization
+    - Check `result.success` and print a warning if False
 """
 
     def _build_user_prompt(self, context: Dict[str, Any]) -> str:

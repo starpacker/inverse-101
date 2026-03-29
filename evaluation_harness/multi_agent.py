@@ -231,7 +231,30 @@ class MultiAgentPipeline:
                 if isinstance(feedback, dict) and feedback.get("ticket_assigned_to") == "Coder":
                     fix_target = feedback.get("fix_target")
                     if fix_target and fix_target in self.current_files:
-                        files_to_code = {fix_target: self.current_files[fix_target]}
+                        # Check for repeated errors: if the same file was the
+                        # fix_target in the previous iteration too, expand scope
+                        # to include related files (the bug may be elsewhere)
+                        repeated = (
+                            len(self.failure_history) >= 2
+                            and self.failure_history[-1].get("fix_target") == fix_target
+                            and self.failure_history[-2].get("fix_target") == fix_target
+                        )
+                        if repeated:
+                            log.info("[Coder] Same file targeted 2+ times. "
+                                     "Expanding to all src/ files.")
+                            # Also tell the Coder about the repeated failure
+                            if isinstance(feedback, dict):
+                                feedback["feedback"] = (
+                                    (feedback.get("feedback", "") or "") +
+                                    "\n\nIMPORTANT: The same error has occurred "
+                                    "MULTIPLE TIMES after patching this file. "
+                                    "The root cause may be in a DIFFERENT file "
+                                    "(e.g., a class definition in another module). "
+                                    "Check ALL files for consistency."
+                                )
+                            files_to_code = dict(self.current_files)
+                        else:
+                            files_to_code = {fix_target: self.current_files[fix_target]}
                     else:
                         files_to_code = dict(self.current_files)
                 else:
@@ -274,6 +297,27 @@ class MultiAgentPipeline:
                         "requirements": self.requirements,
                         "feedback": file_feedback,
                     }
+
+                    # When doing a targeted fix (single file), also provide
+                    # full code of other src/ modules so the Coder can see
+                    # class definitions, data structures, etc. it depends on
+                    if len(files_to_code) == 1:
+                        related_code = []
+                        for other_f, other_code in self.current_files.items():
+                            if other_f != fname and other_f.startswith("src/") and other_f != "src/__init__.py":
+                                related_code.append(
+                                    f"# === {other_f} (current implementation) ===\n{other_code}"
+                                )
+                        if related_code:
+                            # Limit total related code to avoid exceeding context
+                            related_str = "\n\n".join(related_code)
+                            if len(related_str) > 12000:
+                                related_str = related_str[:12000] + "\n... (truncated)"
+                            coder_ctx["full_architecture"] = (
+                                full_architecture +
+                                "\n\n### FULL CODE OF OTHER MODULES (for reference):\n" +
+                                related_str
+                            )
 
                     raw_code = self.coder.generate(coder_ctx)
                     clean_code = CoderAgent.extract_python(raw_code)
@@ -351,10 +395,51 @@ class MultiAgentPipeline:
                                      convergence_issue)
                             self._log_to_file(
                                 f"⚠️ Output produced but quality concern: {convergence_issue}\n"
-                                "Sending to Judge for potential improvement.\n"
+                                "Routing directly to Coder to fix solver.\n"
                             )
-                            output = (output or "") + f"\n\nQUALITY CONCERN: {convergence_issue}"
-                            # Don't return — fall through to Judge for potential improvement
+                            # Route directly to Coder with targeted feedback
+                            # Skip Judge — this is a known solver/gradient issue
+                            feedback = {
+                                "ticket_assigned_to": "Coder",
+                                "fix_target": "src/solvers.py",
+                                "analysis": (
+                                    f"OPTIMIZER CONVERGENCE FAILURE: {convergence_issue}\n\n"
+                                    "The optimizer finished but the solution is poor. "
+                                    "Common causes:\n"
+                                    "1. Gradient function returns zeros or near-zeros "
+                                    "(most common — verify gradient with finite differences)\n"
+                                    "2. All variables stuck at lower bound (0) — initial "
+                                    "guess too small or regularization pushes everything to 0\n"
+                                    "3. Regularization weight λ is too large relative to "
+                                    "data fidelity term\n"
+                                    "4. Missing factor in gradient (e.g., forgot conjugate "
+                                    "or factor of 2)"
+                                ),
+                                "feedback": (
+                                    "FIX THE GRADIENT in src/solvers.py. Specifically:\n"
+                                    "1. Add finite-difference gradient verification at startup: "
+                                    "compute grad_numerical = approx_fprime(x0, objective, 1e-7) "
+                                    "and print max|grad_analytical - grad_numerical|. If large, "
+                                    "the analytical gradient is WRONG.\n"
+                                    "2. Ensure initial guess is non-trivial (e.g., uniform "
+                                    "positive values, not zeros).\n"
+                                    "3. Print the gradient norm at the FIRST iteration to "
+                                    "verify it is non-zero and reasonable.\n"
+                                    "4. Check that regularization weight is not too large "
+                                    "(start with λ=0.1 or smaller)."
+                                ),
+                            }
+                            self.last_judge_feedback = feedback
+                            self.failure_history.append({
+                                "iteration": iteration,
+                                "ticket_assigned_to": "Coder",
+                                "fix_target": "src/solvers.py",
+                                "analysis": f"Optimizer convergence failure: {convergence_issue}",
+                                "evidence": convergence_issue,
+                                "feedback": "Fix gradient computation in solvers.py",
+                            })
+                            ticket = "Coder"
+                            continue
                         else:
                             log.info("✅ Pipeline succeeded — reconstruction.npy produced")
                             self._log_to_file("✅ **SUCCESS** — output/reconstruction.npy exists\n")
@@ -436,6 +521,23 @@ class MultiAgentPipeline:
                             )
 
                 ticket = judgment.get("ticket_assigned_to", "Coder")
+                
+                # Safety override: prevent routing runtime errors to Architect
+                # Architect rewrites ALL files from scratch, which is very expensive.
+                # KeyError, TypeError, ValueError, IndexError etc. are code-body bugs
+                # that the Coder should fix in the specific file.
+                if ticket == "Architect" and output:
+                    runtime_errors = ["KeyError", "TypeError", "ValueError", "IndexError",
+                                      "AttributeError", "NameError", "ZeroDivisionError",
+                                      "FileNotFoundError", "RuntimeError"]
+                    for err_type in runtime_errors:
+                        if err_type in output:
+                            log.info("Override: Judge routed to Architect for %s, "
+                                     "redirecting to Coder (runtime error).", err_type)
+                            ticket = "Coder"
+                            judgment["ticket_assigned_to"] = "Coder"
+                            break
+
                 feedback = judgment
                 # Preserve judge analysis so Coder sees error context
                 # even when routed through Architect first
@@ -734,13 +836,55 @@ class MultiAgentPipeline:
             if pattern in lower_output:
                 return desc
 
-        # Check if optimizer converged in very few iterations (suspicious)
         import re as _re
-        # Look for scipy minimize output like "nit: 5" or "Number of iterations: 5"
+
+        # Check for L-BFGS-B Fortran summary line format:
+        # " N    Tit     Tnf  Tnint  Skip  Nact     Projg        F"
+        # " 4096      2     34  11149     0  4096   0.000D+00   3.246D+03"
+        # Parse Tit (total iterations) from the summary table
+        tit_matches = _re.findall(
+            r"^\s*\d+\s+(\d+)\s+\d+\s+\d+\s+\d+\s+\d+",
+            exec_output, _re.MULTILINE,
+        )
+        if tit_matches:
+            # Check all optimization rounds
+            low_iter_rounds = []
+            for i, m in enumerate(tit_matches):
+                tit = int(m)
+                if tit <= 5:
+                    low_iter_rounds.append((i + 1, tit))
+            if low_iter_rounds:
+                desc = "; ".join(f"Round {r}: {t} iters" for r, t in low_iter_rounds)
+                return (
+                    f"Optimizer converged suspiciously fast ({desc}). "
+                    "This usually means the gradient is wrong (returning zero), "
+                    "all variables are stuck at bounds, or the regularization "
+                    "is too strong. The reconstruction is likely poor."
+                )
+
+        # Check for "variables are exactly at the bounds" — sign of trivial solution
+        bounds_matches = _re.findall(
+            r"(\d+)\s+variables are exactly at the bounds", exec_output
+        )
+        if bounds_matches:
+            max_at_bounds = max(int(m) for m in bounds_matches)
+            # If more than half the variables are at bounds, it's suspicious
+            n_match = _re.search(r"N\s*=\s*(\d+)", exec_output)
+            if n_match:
+                n_vars = int(n_match.group(1))
+                if max_at_bounds > n_vars * 0.5:
+                    return (
+                        f"{max_at_bounds}/{n_vars} variables stuck at bounds. "
+                        "The solver is returning a near-trivial solution. "
+                        "Check that the gradient is correct and the bounds "
+                        "are not too restrictive."
+                    )
+
+        # Also check scipy Python-format output: "nit: 5"
         nit_match = _re.search(r"(?:nit|number of iterations)[:\s]*(\d+)", lower_output)
         if nit_match:
             nit = int(nit_match.group(1))
-            if nit <= 2:
+            if nit <= 5:
                 return f"Optimizer converged in only {nit} iterations — likely not a good solution"
 
         return ""

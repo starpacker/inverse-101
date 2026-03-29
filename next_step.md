@@ -101,19 +101,6 @@ imaging-101/
 3. Multi-Agent 的优势来自：结构化问题分解、Critic 审核捕获错误、Judge 诊断失败原因、Re-planning 策略调整
 4. 但 Multi-Agent 时间成本更高（88min vs 12min），主要由于 gemini-2.5-pro 的 thinking tokens 较多
 
----
-
-## 2. 已知问题 & 技术债务
-
-| 问题 | 严重程度 | 描述 |
-|------|---------|------|
-| Multi-Agent 进程被 kill | 🟡 中 | v2/v3 运行被 SIGKILL，原因不明（非 OOM），v4 在前台终端中运行成功 |
-| Gemini thinking tokens 占比高 | 🟡 中 | gemini-2.5-pro 约 90% tokens 为 reasoning tokens，成本效率不理想 |
-| ReAct parser 对 Gemini 格式的适配 | 🟢 已修 | 已添加 fallback regex 处理 Gemini 的 inline Action 输出 |
-| `.gitignore` 存在合并冲突 | 🟢 已修 | 已清理并重写为干净版本 |
-| Claude 的 ReAct 结果不公平 | 🟡 中 | Claude 运行时使用的是修复前的 parser，可能浪费了大量 FORMAT_ERROR 迭代 |
-| 仅在 1 个任务上测试 | 🔴 高 | 目前只在 `eht_black_hole_original` 上运行了端到端评估 |
-| 可视化模块已就绪 | 🟢 已完成 | `evaluation_harness/visualizer.py` 已集成到 scorer 中，每次端到端评估自动生成 4 种对比图并保存到 `results/figures/` |
 
 ---
 
@@ -135,16 +122,6 @@ imaging-101/
 ```
 
 每个任务运行 2 个配置（ReAct + Multi-Agent），收集统计显著的结果。
-
-#### B. 重跑 Claude ReAct（修复后版本）
-
-在 parser 修复后重新运行 Claude-4.6-opus 的 ReAct 评估，确保公平对比：
-
-```bash
-cd scripts/
-# 修改 run_end2end_gemini.sh 中的 MODEL 为 cds/Claude-4.6-opus
-# 运行评估
-```
 
 #### C. Claude Multi-Agent 评估
 
@@ -171,28 +148,6 @@ cd scripts/
 - **鲁棒性测试**：多次运行取平均值和标准差（目前每个配置只有 1 次运行）
 - **中间过程分析**：记录每个 macro-iteration 的质量变化曲线
 
-### 3.3 🟢 低优先级
-
-#### G. 新任务清洗
-
-继续清洗未完成的任务（按 CLAUDE.md 中的标准流程）：
-- `eht_black_hole_dynamic` — 动态黑洞成像
-- `eht_black_hole_tomography` — 黑洞断层成像
-- `single_molecule_light_field` — 单分子光场成像
-- `SSNP_ODT` — 半稀疏相位 ODT
-- `reflection_ODT` — 反射 ODT
-
-#### H. Docker 沙箱
-
-目前使用 `LocalRunner`（直接在本地运行），应实现 `DockerRunner` 以提供隔离的评估环境，避免 agent 代码影响宿主系统。
-
-#### I. 自动化 CI
-
-- 设置 overnight batch run，对所有任务 × 所有配置进行评估
-- 自动生成对比报告
-- 结果上传至 HuggingFace（`huggingface_upload.py` 已有但未接入流程）
-
----
 
 ## 4. 推荐的下一步行动
 

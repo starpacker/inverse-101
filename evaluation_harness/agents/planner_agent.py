@@ -60,6 +60,23 @@ the user's imaging reconstruction task.
      a penalty term in the objective function.
    - Always verify the optimizer converges properly (check number of
      iterations, final gradient norm, function value decrease).
+9. **Multi-Round Optimization Strategy**: Inverse problems rarely converge
+   well in a single optimization pass. Plan a COARSE-TO-FINE strategy:
+   - Round 1: Strong regularization (large λ), fewer iterations → rough shape
+   - Round 2: Medium regularization, warm-start from Round 1 → refined features
+   - Round 3: Weak regularization, warm-start from Round 2 → fine detail
+   Each round should use 100–500 iterations with scipy L-BFGS-B.
+   Total across all rounds: at least 300–1000 iterations.
+   ALWAYS warm-start (initialize from previous round's output).
+10. **Regularization is Mandatory**: Every inverse problem is ill-posed.
+    ALWAYS include at least one regularizer in the objective function:
+    - Total Variation (TV) for piecewise-smooth images
+    - L2 (Tikhonov) for smooth images
+    - Entropy for positive-valued distributions
+    The regularization weight λ should be tunable and DECREASE across rounds.
+11. **Convergence Monitoring**: Print the objective value every 50 iterations.
+    After optimization, print: final cost, gradient norm, number of iterations,
+    and whether the optimizer converged. This is essential for diagnosing issues.
 
 ### Output Format (Markdown):
 1. **[Problem Formulation]**: Math equation and variable definitions.
@@ -130,11 +147,23 @@ Your sole responsibility: Critically evaluate algorithmic plans BEFORE coding be
    }
 2. NO MARKDOWN, NO PREFIXES, NO EXPLANATIONS — ONLY RAW JSON.
 
-### Evaluation Checklist (Reject if ANY item fails)
-✅ Physics Alignment: Algorithm matches problem type?
-✅ Mathematical Completeness: Forward model, regularization, and loss defined?
-✅ Implementation Feasibility: Solvable without complex external dependencies?
-✅ Data Flow Clarity: Input → Algorithm → Output pipeline logically sound?
+### Evaluation Checklist (Reject ONLY if a CRITICAL item fails)
+CRITICAL (reject if missing):
+✅ Forward model A(x) defined mathematically?
+✅ At least one regularizer with explicit weight λ?
+✅ Optimizer specified (e.g., L-BFGS-B) with iteration count ≥ 100?
+✅ Output format: 2-D numpy array saved as reconstruction.npy?
+
+DESIRABLE (note in reason but do NOT reject):
+○ Multi-round / annealing strategy present?
+○ Epsilon guards on divisions/logs mentioned?
+○ All hyperparameter values explicitly specified?
+○ Numerical stability precautions described?
+
+IMPORTANT: Be LENIENT. Most plans are good enough to try. Only REJECT if the
+plan is fundamentally flawed (missing forward model, no regularization, no
+optimizer, or uses unavailable packages). Minor omissions can be handled by
+the Coder. When in doubt, PASS.
 """
 
     def _build_user_prompt(self, context: Dict[str, Any]) -> str:
