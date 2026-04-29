@@ -1,990 +1,749 @@
 """
-Physics Model — Wave-Optics LFM Forward/Backward Operators
-===========================================================
+Wave-Optics Forward Model for the Light-Field Microscope Task.
 
-Implements the generalized light field point spread function (LFPSF) from
-Stefanoiu et al., Optics Express 27(22):31644, 2019.
+Compact Python port of the core LFM forward model from oLaF's MATLAB
+implementation, adapted for the USAF benchmark. Includes dataclasses,
+the LFMSystem forward/backward projector, all wave-optics physics functions,
+and high-level wrappers used by the reconstruction pipeline.
 
-Pipeline per depth Δz:
-  1. Debye integral  → wavefront U_{mla-} at the MLA plane
-  2. MLA transmittance T → U_{mla+} = U_{mla-} · T
-  3. Rayleigh-Sommerfeld propagation → sensor field U_{sens}
-  4. |U_{sens}|² → detection probability a_{ji}
+Source MATLAB files used as reference:
+- Code/internal/util/CameraGeometry/LFM_setCameraParams.m
+- Code/internal/util/CameraGeometry/LFM_computeResolution.m
+- Code/internal/LFPSF/LFM_computePSFsize.m
+- Code/internal/LFPSF/LFM_calcPSF.m
+- Code/internal/LFPSF/LFM_ulensTransmittance.m
+- Code/internal/LFPSF/LFM_mlaTransmittance.m
+- Code/internal/projectionOperators/LFM_forwardProject.m
 
-The forward operator H and backward operator Ht are stored as object arrays of
-scipy.sparse.csr_matrix, one per (texture_coord, depth) combination.
-
-Adapted from pyolaf/lf.py and pyolaf/project.py
-(github.com/lambdaloop/pyolaf, Lili Karashchuk)
+Deliberate simplifications for a single-file Python implementation:
+- Fixed to the regular-grid, single-focus, plenoptic-1 USAF setup.
+- Lenslet centers are generated analytically from a regular grid instead of
+  being calibrated from a white image.
+- The backward projector is implemented as the adjoint of the forward model
+  instead of explicitly precomputing Ht via backward-project-single-point.
+- The full kernel bank is materialized for readability instead of MATLAB's
+  quarter-symmetry optimization.
 """
 
-import time
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Sequence, Tuple
+
 import numpy as np
-from scipy import integrate, special
-from scipy.fft import fft2, ifft2
-from scipy.ndimage import shift
-from scipy.signal import convolve2d
-from scipy.sparse import csr_matrix, coo_matrix
-from tqdm import trange
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PSF Size Estimation (geometric optics)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def compute_psf_size(max_depth: float, Camera: dict) -> float:
-    """
-    Estimate the PSF radius at the MLA for the given maximum axial depth.
-
-    Uses geometric ray tracing through objective → tube lens → MLA.
-
-    Parameters
-    ----------
-    max_depth : float
-        Maximum axial depth (um) relative to NOP (before offsetFobj correction).
-    Camera : dict
-        Camera parameter dictionary from preprocessing.set_camera_params.
-
-    Returns
-    -------
-    float
-        PSF radius in units of lenslet pitch (rounded up, +2 margin).
-    """
-    max_depth = max_depth - Camera["offsetFobj"]
-    zobj = Camera["fobj"] - max_depth
-    if zobj == Camera["fobj"] or zobj == Camera["dof"]:
-        zobj = zobj + 0.00001 * Camera["fobj"]
-
-    z1 = (zobj * Camera["fobj"]) / (zobj - Camera["fobj"])
-    tube_rad = Camera["objRad"] * Camera["Delta_ot"] * np.abs(1.0 / z1 - 1.0 / Camera["Delta_ot"])
-    z2 = Camera["ftl"] * (Camera["Delta_ot"] - z1) / (Camera["Delta_ot"] - z1 - Camera["ftl"])
-    blur_rad = tube_rad * Camera["tube2mla"] * np.abs(1.0 / z2 - 1.0 / Camera["tube2mla"])
-
-    psf_size = np.ceil(blur_rad / Camera["lensPitch"]) + 2
-    print(f"  PSF radius ≈ {psf_size:.0f} lenslet pitches")
-    return psf_size
-
-
-def get_used_lenslet_centers(psf_size: float, lenslet_centers: dict) -> dict:
-    """
-    Extract the subset of lenslet centers within the PSF footprint.
-
-    Parameters
-    ----------
-    psf_size : float
-        PSF radius in lenslet-pitch units (from compute_psf_size).
-    lenslet_centers : dict
-        Full lenslet center arrays ('px' and 'vox') from preprocessing.
-
-    Returns
-    -------
-    dict
-        {'px': ndarray, 'vox': ndarray} — cropped to PSFsize+3 neighborhood.
-    """
-    used_lens = np.array([psf_size + 3, psf_size + 3])
-    center_of_matrix = np.round(0.01 + np.array(lenslet_centers["px"].shape[:2]) / 2).astype(int)
-
-    idx_y = np.arange(center_of_matrix[0] - used_lens[0] - 1,
-                      center_of_matrix[0] + used_lens[0]).astype(int)
-    idx_x = np.arange(center_of_matrix[1] - used_lens[1] - 1,
-                      center_of_matrix[1] + used_lens[1]).astype(int)
-
-    idx_y = idx_y[(idx_y >= 0) & (idx_y < lenslet_centers["px"].shape[0])]
-    idx_x = idx_x[(idx_x >= 0) & (idx_x < lenslet_centers["px"].shape[1])]
-
-    return {
-        "px":  lenslet_centers["px"][idx_y[:, None], idx_x, :],
-        "vox": lenslet_centers["vox"][idx_y[:, None], idx_x, :],
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Debye Integral PSF
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def compute_psf_single_depth(p1: float, p2: float, p3: float,
-                              Camera: dict, Resolution: dict) -> np.ndarray:
-    """
-    Compute the PSF at the native image plane using the Debye integral.
-
-    Implements Eq. (9) from Stefanoiu et al. 2019 for a source point (p1, p2, p3).
-    Exploits four-fold symmetry: only one quadrant is integrated, the rest
-    are obtained by rotation.
-
-    Parameters
-    ----------
-    p1, p2 : float
-        Source transverse coordinates (um). Typically 0 for on-axis PSF.
-    p3 : float
-        Source axial coordinate (um), offset from NOP.
-    Camera : dict
-        Camera parameters.
-    Resolution : dict
-        Resolution parameters (yspace, xspace must already be set).
-
-    Returns
-    -------
-    np.ndarray
-        Complex PSF, shape (len(yspace), len(xspace)).
-    """
-    k = 2 * np.pi * Camera["n"] / Camera["WaveLength"]
-    alpha = np.arcsin(Camera["NA"] / Camera["n"])
-    demag = 1.0 / Camera["M"]
-
-    ylength = len(Resolution["yspace"])
-    xlength = len(Resolution["xspace"])
-    center_pt = np.ceil(ylength / 2).astype(int)
-
-    yspace = Resolution["yspace"][:center_pt]
-    xspace = Resolution["xspace"][:center_pt]
-
-    d1 = Camera["dof"] - p3
-    u = 4 * k * p3 * (np.sin(alpha / 2) ** 2)
-    Koi = (demag / ((d1 * Camera["WaveLength"]) ** 2)
-           * np.exp(-1j * u / (4 * np.sin(alpha / 2) ** 2)))
-
-    x, y = np.meshgrid(xspace, yspace)
-    r = np.sqrt((y + Camera["M"] * p1) ** 2 + (x + Camera["M"] * p2) ** 2) / Camera["M"]
-    v = k * r * np.sin(alpha)
-
-    def integrand(theta, alpha, u, v):
-        return (np.sqrt(np.cos(theta)) * (1 + np.cos(theta))
-                * np.exp(1j * u / 2 * np.sin(theta / 2) ** 2 / np.sin(alpha / 2) ** 2)
-                * special.j0(np.sin(theta) / np.sin(alpha) * v)
-                * np.sin(theta))
-
-    I0, _ = integrate.quad_vec(integrand, 0, alpha, args=(alpha, u, v), limit=100)
-
-    # Fill upper-left quadrant (exploiting diagonal symmetry)
-    pattern = np.zeros((center_pt, center_pt), dtype="complex128")
-    for a in range(center_pt):
-        pattern[a, a:] = Koi * I0[a, a:]
-
-    # Reconstruct full PSF by 4× rotation
-    patA = pattern
-    patAt = np.fliplr(patA)
-    p3d = np.zeros((xlength, ylength, 4), dtype="complex128")
-    p3d[:center_pt, :center_pt, 0] = pattern
-    p3d[:center_pt, center_pt - 1:, 0] = patAt
-    p3d[:, :, 1] = np.rot90(p3d[:, :, 0], -1)
-    p3d[:, :, 2] = np.rot90(p3d[:, :, 0], -2)
-    p3d[:, :, 3] = np.rot90(p3d[:, :, 0], -3)
-
-    # Sum, then fix diagonal overlaps by picking max-magnitude quadrant
-    psf = np.sum(p3d, axis=2)
-    for i in range(p3d.shape[0]):
-        j_mirror = psf.shape[1] - i - 1
-        psf[i, i] = p3d[i, i, np.argmax(np.abs(p3d[i, i, :]))]
-        psf[i, j_mirror] = p3d[i, j_mirror, np.argmax(np.abs(p3d[i, j_mirror, :]))]
-
-    return psf
-
-
-def compute_psf_all_depths(Camera: dict, Resolution: dict) -> np.ndarray:
-    """
-    Compute the PSF wave stack for all reconstruction depths.
-
-    Exploits conjugate symmetry: PSF(-Δz) = conj(PSF(+Δz)), so each unique
-    |depth| is integrated only once.
-
-    Parameters
-    ----------
-    Camera : dict
-        Camera parameters (offsetFobj applied to shift depths for defocused LFMs).
-    Resolution : dict
-        Must contain 'depths', 'yspace', 'xspace'.
-
-    Returns
-    -------
-    np.ndarray
-        Complex array, shape (len(yspace), len(xspace), nDepths).
-    """
-    # Apply defocus offset (zero for plenoptic=1)
-    Resolution["depths"] = Resolution["depths"] + Camera["offsetFobj"]
-
-    ny = len(Resolution["yspace"])
-    nx = len(Resolution["xspace"])
-    nd = len(Resolution["depths"])
-    psf_stack = np.zeros((ny, nx, nd), dtype="complex128")
-
-    print("  Computing wave-optics PSF at each depth:")
-    for i in range(nd):
-        compute_this = True
-        src_idx = 0
-        if i > 0:
-            prev = np.where(np.abs(Resolution["depths"][:i]) == np.abs(Resolution["depths"][i]))[0]
-            if prev.size > 0:
-                compute_this = False
-                src_idx = prev[0]
-
-        if compute_this:
-            tic = time.time()
-            psf = compute_psf_single_depth(0, 0, Resolution["depths"][i], Camera, Resolution)
-            print(f"    depth {i+1}/{nd} (Δz={Resolution['depths'][i]:.1f} μm): {time.time()-tic:.1f}s")
-        else:
-            if Resolution["depths"][i] == Resolution["depths"][src_idx]:
-                psf = psf_stack[:, :, src_idx]
-            else:
-                psf = np.conj(psf_stack[:, :, src_idx])
-            print(f"    depth {i+1}/{nd} (Δz={Resolution['depths'][i]:.1f} μm): reused conjugate")
-
-        psf_stack[:, :, i] = psf
-
-    return psf_stack
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MLA Transmittance
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def compute_ulens_transmittance(Camera: dict, Resolution: dict) -> np.ndarray:
-    """
-    Single micro-lens complex phase transmittance t(x_l, y_l).
-
-    Implements Eq. (14): t = P(x,y) · exp(-ik/(2f_ml) · (x²+y²))
-    P is the square aperture mask (uLensMask=1) or circular aperture.
-
-    Parameters
-    ----------
-    Camera : dict
-    Resolution : dict
-        Must contain 'yMLspace', 'xMLspace', 'sensMask', 'maskFlag'.
-
-    Returns
-    -------
-    np.ndarray
-        Complex array, shape (len(yMLspace), len(xMLspace)).
-    """
-    pattern = np.zeros((len(Resolution["yMLspace"]), len(Resolution["xMLspace"])),
-                       dtype="complex128")
-    for a, y in enumerate(Resolution["yMLspace"]):
-        for b, x in enumerate(Resolution["xMLspace"]):
-            pattern[a, b] = np.exp(-1j * Camera["k"] / (2 * Camera["fm"]) * (y**2 + x**2))
-
-    if Resolution["maskFlag"] == 1:
-        pattern[Resolution["sensMask"] == 0] = 0
-    else:
-        x_g, y_g = np.meshgrid(Resolution["xMLspace"], Resolution["yMLspace"])
-        pattern[np.sqrt(x_g**2 + y_g**2) >= Camera["lensPitch"] / 2 - 3] = 0
-
-    return pattern
-
-
-def compute_mla_transmittance(Camera: dict, Resolution: dict,
-                               ulens_pattern: np.ndarray) -> np.ndarray:
-    """
-    Build the full MLA transmittance T by tiling the single-lens pattern.
-
-    Implements Eq. (13): T = rep_{p_ml}(t(x_l, y_l)).
-    Constructs an extended array, places delta functions at each lenslet center,
-    then convolves with ulens_pattern to replicate the lens at each position.
-
-    Parameters
-    ----------
-    Camera : dict
-    Resolution : dict
-        Must contain 'usedLensletCenters', 'yspace', 'xspace', 'yMLspace', 'xMLspace'.
-    ulens_pattern : np.ndarray
-        Single-lens transmittance from compute_ulens_transmittance.
-
-    Returns
-    -------
-    np.ndarray
-        Complex MLA transmittance, shape (len(yspace), len(xspace)).
-    """
-    ny = len(Resolution["yspace"])
-    nx = len(Resolution["xspace"])
-    ny_ml = len(Resolution["yMLspace"])
-    nx_ml = len(Resolution["xMLspace"])
-
-    ny_ext = ny + 2 * ny_ml
-    nx_ext = nx + 2 * nx_ml
-
-    centers_off = np.zeros((*Resolution["usedLensletCenters"]["px"].shape[:2], 2), dtype="int64")
-    centers_off[..., 0] = (np.round(Resolution["usedLensletCenters"]["px"][..., 0])
-                           + np.ceil(ny_ext / 2)).astype(int)
-    centers_off[..., 1] = (np.round(Resolution["usedLensletCenters"]["px"][..., 1])
-                           + np.ceil(nx_ext / 2)).astype(int)
-
-    MLcenters = np.zeros((ny_ext, nx_ext), dtype="complex128")
-    for a in range(centers_off.shape[0]):
-        for b in range(centers_off.shape[1]):
-            cy, cx = centers_off[a, b, 0], centers_off[a, b, 1]
-            if 1 <= cy <= ny_ext and 1 <= cx <= nx_ext:
-                MLcenters[cy - 1, cx - 1] = 1.0 + 0j
-
-    MLARRAY_ext = convolve2d(MLcenters, ulens_pattern, mode="same")
-
-    r0 = int(np.ceil(ny_ext / 2) - np.floor(ny / 2)) - 1
-    c0 = int(np.ceil(nx_ext / 2) - np.floor(nx / 2)) - 1
-    MLARRAY = MLARRAY_ext[r0:r0 + ny, c0:c0 + nx]
-    return MLARRAY
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Rayleigh-Sommerfeld Propagation
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def propagate_to_sensor(field: np.ndarray, sensor_res: np.ndarray,
-                         z: float, wavelength: float,
-                         ideal_sampling: bool = False) -> np.ndarray:
-    """
-    Propagate a wavefield from the MLA to the sensor using the
-    Rayleigh-Sommerfeld angular spectrum method.
-
-    Implements Eq. (15-16): U_sens = F^{-1}{ F{U_mla+} · H_rs }
-    where H_rs = exp(ik·z·sqrt(1 - λ²(f_x²+f_y²))).
-
-    Parameters
-    ----------
-    field : np.ndarray
-        Complex wavefield at MLA plane, shape (Ny, Nx).
-    sensor_res : np.ndarray
-        Pixel size [dy, dx] in um.
-    z : float
-        Propagation distance (um): mla2sensor.
-    wavelength : float
-        Emission wavelength (um).
-    ideal_sampling : bool
-        If True, resample to ideal Nyquist rate before propagation (slower).
-        If False, propagate at native sampling rate (faster, default).
-
-    Returns
-    -------
-    np.ndarray
-        Complex wavefield at sensor, same shape as input.
-    """
-    if z == 0:
-        return field
-
-    Ny, Nx = field.shape
-    k = 2 * np.pi / wavelength
-
-    if ideal_sampling:
-        from scipy.ndimage import zoom
-        Lx = Ny * sensor_res[0]
-        Ly = Nx * sensor_res[1]
-        ideal_rate = np.array([wavelength * np.sqrt(z**2 + (Lx / 2)**2) / Lx,
-                                wavelength * np.sqrt(z**2 + (Ly / 2)**2) / Ly])
-        ideal_n = np.ceil(np.array([Lx, Ly]) / ideal_rate).astype(int)
-        ideal_n = ideal_n + (1 - ideal_n % 2)
-        rate = np.array([Lx, Ly]) / ideal_n
-
-        du = 1.0 / (ideal_n[0] * float(rate[0]))
-        dv = 1.0 / (ideal_n[1] * float(rate[1]))
-        u = np.hstack([np.arange(np.ceil(ideal_n[0] / 2)), np.arange(-np.floor(ideal_n[0] / 2), 0)]) * du
-        v = np.hstack([np.arange(np.ceil(ideal_n[1] / 2)), np.arange(-np.floor(ideal_n[1] / 2), 0)]) * dv
-        H = np.exp(1j * np.sqrt(1 - wavelength**2 * (np.tile(u, (len(v), 1)).T**2
-                                                       + np.tile(v, (len(u), 1))**2)) * z * k)
-        field_z = zoom(field, ideal_n, order=3)
-        out = ifft2(fft2(field_z.T, norm="ortho") * H, norm="ortho").T
-        out = zoom(out, field.shape, order=3)
-    else:
-        du = 1.0 / (Ny * float(sensor_res[0]))
-        dv = 1.0 / (Nx * float(sensor_res[1]))
-        u = np.hstack([np.arange(np.ceil(Ny / 2)), np.arange(-np.floor(Ny / 2), 0)]) * du
-        v = np.hstack([np.arange(np.ceil(Nx / 2)), np.arange(-np.floor(Nx / 2), 0)]) * dv
-        H = np.exp(1j * np.sqrt(1 - wavelength**2 * (np.tile(u, (len(v), 1)).T**2
-                                                       + np.tile(v, (len(u), 1))**2)) * z * k)
-        out = np.exp(1j * k * z) * ifft2(fft2(field, norm="ortho") * H, norm="ortho")
-
-    return out
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Image Shift Helper
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _imshift(image: np.ndarray, shift_x: float, shift_y: float) -> np.ndarray:
-    """Shift a 2D (or 3D) image by (shift_x, shift_y) using linear interpolation."""
-    if image.ndim == 2:
-        return shift(image, (shift_x, shift_y), order=1)
+import scipy.fft as fft
+from scipy import signal
+from scipy.special import j0
+import yaml
+
+
+EPS = 1e-8
+
+
+# ---------------------------------------------------------------------------
+# Dataclasses
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CameraParams:
+    grid_type: str
+    focus: str
+    plenoptic: int
+    u_lens_mask: int
+    magnification: float
+    numerical_aperture: float
+    tube_focal_length: float
+    microlens_focal_length: float
+    tube_to_mla: float
+    mla_to_sensor: float
+    lens_pitch: float
+    pixel_pitch: float
+    wavelength: float
+    refractive_index: float
+    range_mode: str
+    fobj: float
+    delta_ot: float
+    spacing_px: float
+    new_spacing_px: int
+    new_pixel_pitch: float
+    wave_number: float
+    objective_radius: float
+    ulens_radius: float
+    tube_radius: float
+    dof: float
+    offset_fobj: float
+    mla_magnification: float
+
+
+@dataclass
+class Resolution:
+    nnum: Tuple[int, int]
+    nnum_half: Tuple[int, int]
+    tex_nnum: Tuple[int, int]
+    tex_nnum_half: Tuple[int, int]
+    sensor_res: Tuple[float, float]
+    tex_res: Tuple[float, float, float]
+    tex_scale_factor: Tuple[float, float]
+    sens_mask: np.ndarray
+    tex_mask: np.ndarray
+    depths: np.ndarray
+    depth_step: float
+    depth_range: Tuple[float, float]
+    yspace: np.ndarray
+    xspace: np.ndarray
+    y_ml_space: np.ndarray
+    x_ml_space: np.ndarray
+    psf_size_lenslets: int
+
+
+@dataclass
+class PatternOp:
+    local_coord: Tuple[int, int]
+    tex_indices: np.ndarray
+    img_indices: np.ndarray
+    kernels: List[np.ndarray]
+    adjoint_kernels: List[np.ndarray]
+
+
+# ---------------------------------------------------------------------------
+# LFMSystem: forward and backward projectors
+# ---------------------------------------------------------------------------
+
+class LFMSystem:
+    def __init__(
+        self,
+        camera: CameraParams,
+        resolution: Resolution,
+        lenslet_rows_px: np.ndarray,
+        lenslet_cols_px: np.ndarray,
+        img_shape: Tuple[int, int],
+        tex_shape: Tuple[int, int],
+        pattern_ops: Sequence[PatternOp],
+    ) -> None:
+        self.camera = camera
+        self.resolution = resolution
+        self.lenslet_rows_px = lenslet_rows_px
+        self.lenslet_cols_px = lenslet_cols_px
+        self.img_shape = img_shape
+        self.tex_shape = tex_shape
+        self.pattern_ops = list(pattern_ops)
+        self.depths = resolution.depths
+
+    def forward_project(self, volume: np.ndarray) -> np.ndarray:
+        projection = np.zeros(self.img_shape, dtype=np.float64)
+        volume_slices = [np.asarray(volume[:, :, d], dtype=np.float64) for d in range(volume.shape[2])]
+
+        for depth_idx, plane in enumerate(volume_slices):
+            plane_flat = plane.ravel()
+            for op in self.pattern_ops:
+                sampled = plane_flat[op.tex_indices]
+                if not np.any(sampled):
+                    continue
+                sparse_plane = np.zeros(self.img_shape[0] * self.img_shape[1], dtype=np.float64)
+                sparse_plane[op.img_indices] = sampled
+                sparse_plane = sparse_plane.reshape(self.img_shape)
+                projection += signal.fftconvolve(sparse_plane, op.kernels[depth_idx], mode="same")
+
+        projection[projection < 0] = 0
+        return projection
+
+    def backward_project(self, projection: np.ndarray) -> np.ndarray:
+        backprojection = np.zeros(self.tex_shape + (len(self.depths),), dtype=np.float64)
+        projection = np.asarray(projection, dtype=np.float64)
+
+        for depth_idx in range(len(self.depths)):
+            back_flat = np.zeros(self.tex_shape[0] * self.tex_shape[1], dtype=np.float64)
+            for op in self.pattern_ops:
+                conv_result = signal.fftconvolve(projection, op.adjoint_kernels[depth_idx], mode="same")
+                back_flat[op.tex_indices] += conv_result.ravel()[op.img_indices]
+            backprojection[:, :, depth_idx] = back_flat.reshape(self.tex_shape)
+
+        backprojection[backprojection < 0] = 0
+        return backprojection
+
+
+# ---------------------------------------------------------------------------
+# Camera parameter loading
+# ---------------------------------------------------------------------------
+
+def load_camera_params(config_path: Path, new_spacing_px: int) -> CameraParams:
+    with config_path.open("r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle)
+
+    fm_value = raw["fm"]
+    if isinstance(fm_value, (list, tuple)):
+        if len(fm_value) != 1:
+            raise ValueError("This compact Python port only supports single-focus microlenses.")
+        fm_value = fm_value[0]
+
+    grid_type = str(raw["gridType"])
+    focus = str(raw["focus"])
+    plenoptic = int(raw["plenoptic"])
+    if grid_type != "reg" or focus != "single" or plenoptic != 1:
+        raise ValueError("This script is fixed to regular-grid, single-focus, plenoptic-1 USAF LFM.")
+
+    magnification = float(raw["M"])
+    numerical_aperture = float(raw["NA"])
+    tube_focal_length = float(raw["ftl"])
+    microlens_focal_length = float(fm_value)
+    tube_to_mla = float(raw["tube2mla"]) if float(raw["tube2mla"]) != 0 else tube_focal_length
+    mla_to_sensor = float(raw["mla2sensor"]) if float(raw["mla2sensor"]) != 0 else microlens_focal_length
+    lens_pitch = float(raw["lensPitch"])
+    pixel_pitch = float(raw["pixelPitch"])
+    wavelength = float(raw["WaveLength"])
+    refractive_index = float(raw["n"])
+
+    spacing_px = lens_pitch / pixel_pitch
+    fobj = tube_focal_length / magnification
+    delta_ot = tube_focal_length + fobj
+    wave_number = 2 * math.pi * refractive_index / wavelength
+    objective_radius = fobj * numerical_aperture
+    tube_radius = objective_radius
+    dof = fobj
+    offset_fobj = dof - fobj
+    ulens_radius = tube_radius * mla_to_sensor / tube_to_mla
+    range_mode = "quarter" if grid_type == "reg" else "full"
+
+    return CameraParams(
+        grid_type=grid_type,
+        focus=focus,
+        plenoptic=plenoptic,
+        u_lens_mask=int(raw["uLensMask"]),
+        magnification=magnification,
+        numerical_aperture=numerical_aperture,
+        tube_focal_length=tube_focal_length,
+        microlens_focal_length=microlens_focal_length,
+        tube_to_mla=tube_to_mla,
+        mla_to_sensor=mla_to_sensor,
+        lens_pitch=lens_pitch,
+        pixel_pitch=pixel_pitch,
+        wavelength=wavelength,
+        refractive_index=refractive_index,
+        range_mode=range_mode,
+        fobj=fobj,
+        delta_ot=delta_ot,
+        spacing_px=spacing_px,
+        new_spacing_px=int(new_spacing_px),
+        new_pixel_pitch=lens_pitch / float(new_spacing_px),
+        wave_number=wave_number,
+        objective_radius=objective_radius,
+        ulens_radius=ulens_radius,
+        tube_radius=tube_radius,
+        dof=dof,
+        offset_fobj=offset_fobj,
+        mla_magnification=magnification,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Optics helpers
+# ---------------------------------------------------------------------------
+
+def fix_mask(mask: np.ndarray, spacing: Tuple[int, int], grid_type: str) -> np.ndarray:
+    mask = mask.astype(np.uint8).copy()
+    trial_space = np.zeros((mask.shape[0] * 3, mask.shape[1] * 3), dtype=np.float64)
+    r_center = trial_space.shape[0] // 2
+    c_center = trial_space.shape[1] // 2
+    rs, cs = spacing
+
+    if grid_type != "reg":
+        raise ValueError("This script only supports regular grids.")
+
+    row_positions = [r_center - rs, r_center, r_center + rs]
+    col_positions = [c_center - cs, c_center, c_center + cs]
+    trial_space[np.ix_(row_positions, col_positions)] = 1
+
+    space = signal.convolve2d(trial_space, mask.astype(np.float64), mode="same")
+    r, c = mask.shape
+    space_center = space[r : 2 * r, c : 2 * c]
+
+    new_mask = mask.copy()
+    for i in range(r):
+        for j in range(c):
+            if space_center[i, j] == 0:
+                new_mask[i, j] = 1
+                space = signal.convolve2d(trial_space, new_mask.astype(np.float64), mode="same")
+                space_center = space[r : 2 * r, c : 2 * c]
+            if space_center[i, j] == 2:
+                new_mask[i, j] = 0
+                space = signal.convolve2d(trial_space, new_mask.astype(np.float64), mode="same")
+                space_center = space[r : 2 * r, c : 2 * c]
+
+    return new_mask.astype(bool)
+
+
+def compute_patch_mask(
+    spacing: Tuple[int, int],
+    grid_type: str,
+    res: Tuple[float, float],
+    patch_radius: float,
+    nnum: Tuple[int, int],
+) -> np.ndarray:
+    ys = np.arange(-math.floor(nnum[0] / 2), math.floor(nnum[0] / 2) + 1, dtype=np.float64)
+    xs = np.arange(-math.floor(nnum[1] / 2), math.floor(nnum[1] / 2) + 1, dtype=np.float64)
+    yy, xx = np.meshgrid(res[0] * ys, res[1] * xs, indexing="ij")
+    mask = np.sqrt(yy * yy + xx * xx) < patch_radius
+    return fix_mask(mask, spacing, grid_type)
+
+
+def compute_psf_size_lenslets(max_depth: float, camera: CameraParams) -> int:
+    max_depth = max_depth - camera.offset_fobj
+    zobj = camera.fobj - max_depth
+    if math.isclose(zobj, camera.fobj) or math.isclose(zobj, camera.dof):
+        zobj += 1e-5 * camera.fobj
+
+    z1 = (zobj * camera.fobj) / (zobj - camera.fobj)
+    tube_radius = camera.objective_radius * camera.delta_ot * abs((1 / z1) - (1 / camera.delta_ot))
+    z2 = camera.tube_focal_length * (camera.delta_ot - z1) / (camera.delta_ot - z1 - camera.tube_focal_length)
+    blur_radius = tube_radius * camera.tube_to_mla * abs((1 / z2) - (1 / camera.tube_to_mla))
+    return int(math.ceil(blur_radius / camera.lens_pitch) + 2)
+
+
+def build_resolution(
+    camera: CameraParams,
+    depth_range: Tuple[float, float],
+    depth_step: float,
+) -> Resolution:
+    nspacing_lenslet = (camera.new_spacing_px, camera.new_spacing_px)
+    sensor_res = (
+        camera.lens_pitch / nspacing_lenslet[0],
+        camera.lens_pitch / nspacing_lenslet[1],
+    )
+    nnum = (
+        nspacing_lenslet[0] + (1 - nspacing_lenslet[0] % 2),
+        nspacing_lenslet[1] + (1 - nspacing_lenslet[1] % 2),
+    )
+    tex_nnum = nnum
+    tex_scale_factor = (1.0, 1.0)
+    tex_res = (
+        sensor_res[0] / (tex_scale_factor[0] * camera.magnification),
+        sensor_res[1] / (tex_scale_factor[1] * camera.magnification),
+        depth_step,
+    )
+    sens_mask = compute_patch_mask(nspacing_lenslet, camera.grid_type, sensor_res, camera.ulens_radius, nnum)
+    tex_mask = compute_patch_mask(
+        nspacing_lenslet,
+        camera.grid_type,
+        (tex_res[0], tex_res[1]),
+        tex_nnum[0] * tex_res[0] / 2.0,
+        tex_nnum,
+    )
+
+    depths = np.arange(depth_range[0], depth_range[1] + 0.5 * depth_step, depth_step, dtype=np.float64)
+    max_depth = float(depths[np.argmax(np.abs(depths + camera.offset_fobj))] + camera.offset_fobj)
+    psf_size_lenslets = compute_psf_size_lenslets(max_depth, camera)
+    img_half = max(nnum[1] * psf_size_lenslets, 2 * nnum[1])
+    yspace = sensor_res[0] * np.arange(-img_half, img_half + 1, dtype=np.float64)
+    xspace = sensor_res[1] * np.arange(-img_half, img_half + 1, dtype=np.float64)
+    y_ml_space = sensor_res[0] * np.arange(-(nnum[0] // 2), (nnum[0] // 2) + 1, dtype=np.float64)
+    x_ml_space = sensor_res[1] * np.arange(-(nnum[1] // 2), (nnum[1] // 2) + 1, dtype=np.float64)
+
+    return Resolution(
+        nnum=nnum,
+        nnum_half=((nnum[0] + 1) // 2, (nnum[1] + 1) // 2),
+        tex_nnum=tex_nnum,
+        tex_nnum_half=((tex_nnum[0] + 1) // 2, (tex_nnum[1] + 1) // 2),
+        sensor_res=sensor_res,
+        tex_res=tex_res,
+        tex_scale_factor=tex_scale_factor,
+        sens_mask=sens_mask,
+        tex_mask=tex_mask,
+        depths=depths,
+        depth_step=depth_step,
+        depth_range=depth_range,
+        yspace=yspace,
+        xspace=xspace,
+        y_ml_space=y_ml_space,
+        x_ml_space=x_ml_space,
+        psf_size_lenslets=psf_size_lenslets,
+    )
+
+
+def build_regular_lenslet_grid(n_lenslets: int, spacing_px: int) -> Tuple[np.ndarray, np.ndarray]:
+    coords = np.arange(n_lenslets, dtype=np.int32) * int(spacing_px)
+    coords = coords - coords[n_lenslets // 2]
+    rows, cols = np.meshgrid(coords, coords, indexing="ij")
+    return rows, cols
+
+
+def select_used_centers(
+    lenslet_rows: np.ndarray,
+    lenslet_cols: np.ndarray,
+    psf_size_lenslets: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    used_radius = psf_size_lenslets + 3
+    center_row = lenslet_rows.shape[0] // 2
+    center_col = lenslet_rows.shape[1] // 2
+    row_lo = max(center_row - used_radius, 0)
+    row_hi = min(center_row + used_radius + 1, lenslet_rows.shape[0])
+    col_lo = max(center_col - used_radius, 0)
+    col_hi = min(center_col + used_radius + 1, lenslet_rows.shape[1])
+    return lenslet_rows[row_lo:row_hi, col_lo:col_hi], lenslet_cols[row_lo:row_hi, col_lo:col_hi]
+
+
+def integer_shift(image: np.ndarray, shift_row: int, shift_col: int) -> np.ndarray:
+    shift_row = int(round(shift_row))
+    shift_col = int(round(shift_col))
     out = np.zeros_like(image)
-    for i in range(image.shape[-1]):
-        out[..., i] = shift(image[..., i], (shift_x, shift_y), order=1)
+
+    src_row_start = max(0, -shift_row)
+    src_row_end = image.shape[0] - max(0, shift_row)
+    dst_row_start = max(0, shift_row)
+    dst_row_end = dst_row_start + (src_row_end - src_row_start)
+
+    src_col_start = max(0, -shift_col)
+    src_col_end = image.shape[1] - max(0, shift_col)
+    dst_col_start = max(0, shift_col)
+    dst_col_end = dst_col_start + (src_col_end - src_col_start)
+
+    if src_row_end <= src_row_start or src_col_end <= src_col_start:
+        return out
+
+    out[dst_row_start:dst_row_end, dst_col_start:dst_col_end] = image[
+        src_row_start:src_row_end,
+        src_col_start:src_col_end,
+    ]
     return out
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Forward / Backward Patterns
-# ═══════════════════════════════════════════════════════════════════════════════
+def compute_native_plane_psf(
+    depth_um: float,
+    camera: CameraParams,
+    resolution: Resolution,
+    theta_samples: int,
+) -> np.ndarray:
+    alpha = math.asin(camera.numerical_aperture / camera.refractive_index)
+    sin_alpha_half_sq = math.sin(alpha / 2.0) ** 2
+    demag = 1.0 / camera.magnification
+    d1 = camera.dof - depth_um
+    k = camera.wave_number
+    u = 4.0 * k * depth_um * sin_alpha_half_sq
+    koi = demag / ((d1 * camera.wavelength) ** 2) * np.exp(-1j * u / (4.0 * sin_alpha_half_sq))
 
-def compute_forward_patterns(psf_wave_stack: np.ndarray, mlarray: np.ndarray,
-                              Camera: dict, Resolution: dict) -> np.ndarray:
-    """
-    Compute the forward projection operator H.
+    yy, xx = np.meshgrid(resolution.yspace, resolution.xspace, indexing="ij")
+    radial = np.sqrt(yy * yy + xx * xx) / camera.magnification
+    v = k * radial * math.sin(alpha)
 
-    For each (aa, bb) texture coordinate and each depth c:
-      1. Shift the native-plane PSF to position (aa, bb)
-      2. Multiply by MLA transmittance
-      3. Propagate to sensor via RS diffraction
-      4. Shift back to center; store |field|² as sparse matrix
+    theta = np.linspace(0.0, alpha, theta_samples, dtype=np.float64)
+    theta = theta[:, None, None]
+    sin_theta_half_sq = np.sin(theta / 2.0) ** 2
+    phase = np.exp(1j * (u / 2.0) * sin_theta_half_sq / sin_alpha_half_sq)
+    prefactor = np.sqrt(np.cos(theta)) * (1.0 + np.cos(theta)) * np.sin(theta)
+    bessel_arg = (np.sin(theta) / math.sin(alpha)) * v[None, :, :]
+    integrand = prefactor * phase * j0(bessel_arg)
+    integral = np.trapz(integrand, x=theta[:, 0, 0], axis=0)
+    return koi * integral
 
-    Exploits quarter-symmetry for regular grids: only the upper-left
-    quadrant (aa < TexNnum_half, bb < TexNnum_half) is computed explicitly.
 
-    Parameters
-    ----------
-    psf_wave_stack : np.ndarray
-        Complex PSF stack, shape (ny, nx, nDepths).
-    mlarray : np.ndarray
-        Complex MLA transmittance, shape (ny, nx).
-    Camera : dict
-    Resolution : dict
-        Must contain 'TexNnum', 'TexNnum_half', 'texScaleFactor', 'sensorRes', 'depths'.
+def prop_to_sensor(
+    field_at_mla: np.ndarray,
+    sensor_res: Tuple[float, float],
+    z_um: float,
+    wavelength_um: float,
+) -> np.ndarray:
+    ny, nx = field_at_mla.shape
+    k = 2 * math.pi / wavelength_um
+    fy = fft.fftfreq(ny, d=sensor_res[0])
+    fx = fft.fftfreq(nx, d=sensor_res[1])
+    fy_grid, fx_grid = np.meshgrid(fy, fx, indexing="ij")
+    argument = (1.0 - (wavelength_um ** 2) * (fy_grid ** 2 + fx_grid ** 2)).astype(np.complex128)
+    transfer = np.exp(1j * np.sqrt(argument) * z_um * k)
+    return np.exp(1j * k * z_um) * fft.ifft2(fft.fft2(field_at_mla) * transfer)
 
-    Returns
-    -------
-    np.ndarray
-        Object array H, shape (coords_range[0], coords_range[1], nDepths).
-        Each element is a csr_matrix.
-    """
-    if Camera["range"] == "quarter":
-        coords_range = Resolution["TexNnum_half"]
+
+def build_ulens_pattern(camera: CameraParams, resolution: Resolution) -> np.ndarray:
+    yy, xx = np.meshgrid(resolution.y_ml_space, resolution.x_ml_space, indexing="ij")
+    phase = np.exp(-1j * camera.wave_number / (2.0 * camera.microlens_focal_length) * (yy * yy + xx * xx))
+    if camera.u_lens_mask == 1:
+        phase = np.where(resolution.sens_mask, phase, 0.0)
     else:
-        coords_range = Resolution["TexNnum"]
-
-    half_coord = Resolution["TexNnum_half"] // Resolution["texScaleFactor"]
-    sensor_res = Resolution["sensorRes"]
-    nd = len(Resolution["depths"])
-
-    H = np.empty((coords_range[0], coords_range[1], nd), dtype=object)
-
-    for c in trange(nd, ncols=70, desc="  Forward patterns"):
-        psf_ref = psf_wave_stack[:, :, c]
-        for i in range(coords_range[0]):
-            aa_tex = i + 1
-            aa_sensor = aa_tex / Resolution["texScaleFactor"][0]
-            for j in range(coords_range[1]):
-                bb_tex = j + 1
-                bb_sensor = bb_tex / Resolution["texScaleFactor"][1]
-
-                shift_x = round(aa_sensor - half_coord[0])
-                shift_y = round(bb_sensor - half_coord[1])
-
-                psf_shifted = _imshift(psf_ref, shift_x, shift_y)
-                psf_mla = psf_shifted * mlarray
-                lf_psf = propagate_to_sensor(psf_mla, sensor_res,
-                                              Camera["mla2sensor"], Camera["WaveLength"],
-                                              ideal_sampling=False)
-                lf_psf = _imshift(lf_psf, -shift_x, -shift_y)
-                H[i, j, c] = csr_matrix(np.abs(lf_psf) ** 2)
-
-    return H
+        radius = np.sqrt(yy * yy + xx * xx)
+        phase = np.where(radius < (camera.lens_pitch / 2.0 - 3.0), phase, 0.0)
+    return phase
 
 
-def _sconv2_single_point_flip(size_a: tuple, point: tuple, B: np.ndarray,
-                               flip_x: bool, flip_y: bool, shape: str) -> np.ndarray:
-    """
-    Sparse convolution of a single point with a (possibly flipped) filter B.
-    Adapted from pyolaf/lf.py::sconv2singlePointFlip.
-    """
-    m, n = size_a
-    p, q = B.shape
-    i, j = point
+def overlay_centered_patch(canvas: np.ndarray, patch: np.ndarray, center_row: int, center_col: int) -> None:
+    half_rows = patch.shape[0] // 2
+    half_cols = patch.shape[1] // 2
 
-    ky, kx = np.nonzero(B)
-    bvals = B[ky, kx].astype(float)
-    if flip_x:
-        ky = p - ky - 1
-    if flip_y:
-        kx = q - kx - 1
-    ky += 1
-    kx += 1
+    row_lo = center_row - half_rows
+    row_hi = row_lo + patch.shape[0]
+    col_lo = center_col - half_cols
+    col_hi = col_lo + patch.shape[1]
 
-    I = i + ky - 1
-    J = j + kx - 1
-    C_vals = bvals
+    clip_row_lo = max(row_lo, 0)
+    clip_row_hi = min(row_hi, canvas.shape[0])
+    clip_col_lo = max(col_lo, 0)
+    clip_col_hi = min(col_hi, canvas.shape[1])
 
-    shape = shape.lower()
-    if shape == "full":
-        out = coo_matrix((C_vals, (I, J)), shape=(m + p - 1, n + q - 1))
-    elif shape == "same":
-        cy = int(np.ceil((p + 1) / 2))
-        cx = int(np.ceil((q + 1) / 2))
-        II = I - cy
-        JJ = J - cx
-        mask = (II >= 0) & (II < m) & (JJ >= 0) & (JJ < n)
-        out = coo_matrix((C_vals[mask], (II[mask], JJ[mask])), shape=(m, n))
-    elif shape == "valid":
-        mn0 = max(m - max(0, p - 1), 0)
-        mn1 = max(n - max(0, q - 1), 0)
-        II = I - p
-        JJ = J - q
-        mask = (II >= 0) & (II < mn0) & (JJ >= 0) & (JJ < mn1)
-        out = coo_matrix((C_vals[mask], (II[mask], JJ[mask])), shape=(mn0, mn1))
-    else:
-        raise ValueError(f"Unknown shape mode: {shape}")
+    if clip_row_lo >= clip_row_hi or clip_col_lo >= clip_col_hi:
+        return
 
-    return out.toarray()
+    patch_row_lo = clip_row_lo - row_lo
+    patch_row_hi = patch_row_lo + (clip_row_hi - clip_row_lo)
+    patch_col_lo = clip_col_lo - col_lo
+    patch_col_hi = patch_col_lo + (clip_col_hi - clip_col_lo)
+
+    canvas[clip_row_lo:clip_row_hi, clip_col_lo:clip_col_hi] += patch[
+        patch_row_lo:patch_row_hi,
+        patch_col_lo:patch_col_hi,
+    ]
 
 
-def _backproject_single_pixel(H: np.ndarray, Resolution: dict, img_size: np.ndarray,
-                               tex_size: np.ndarray, current_pixel: list,
-                               lenslet_centers: dict, crange: str) -> np.ndarray:
-    """
-    Compute the object-space response from a single sensor pixel.
+def build_mla_array(
+    used_rows_px: np.ndarray,
+    used_cols_px: np.ndarray,
+    resolution: Resolution,
+    ulens_pattern: np.ndarray,
+) -> np.ndarray:
+    y_length = len(resolution.yspace)
+    x_length = len(resolution.xspace)
+    y_extended = y_length + 2 * len(resolution.y_ml_space)
+    x_extended = x_length + 2 * len(resolution.x_ml_space)
+    canvas = np.zeros((y_extended, x_extended), dtype=np.complex128)
+    center_row = y_extended // 2
+    center_col = x_extended // 2
 
-    For each texture coordinate (aa, bb) and depth c, computes the contribution
-    of the sensor pixel to volume voxels via the rotated PSF H[aa, bb, c].
-    """
-    nd = H.shape[2]
-    backproj = np.zeros((tex_size[0], tex_size[1], nd))
+    for row_offset, col_offset in zip(used_rows_px.ravel(), used_cols_px.ravel()):
+        overlay_centered_patch(canvas, ulens_pattern, int(round(center_row + row_offset)), int(round(center_col + col_offset)))
 
-    lens_vox_y = lenslet_centers["vox"][:, :, 0]
-    lens_vox_x = lenslet_centers["vox"][:, :, 1]
-    lens_sen_y = lenslet_centers["px"][:, :, 0]
-    lens_sen_x = lenslet_centers["px"][:, :, 1]
-
-    for c in range(nd):
-        slice_c = np.zeros(tex_size)
-        for aa in range(Resolution["TexNnum"][0]):
-            for bb in range(Resolution["TexNnum"][1]):
-                if Resolution["texMask"][aa, bb] == 0:
-                    continue
-
-                aa_new, flip_x = aa, False
-                if aa > Resolution["TexNnum_half"][0] - 1 and crange == "quarter":
-                    aa_new = Resolution["TexNnum"][0] - aa - 1
-                    flip_x = True
-
-                bb_new, flip_y = bb, False
-                if bb > Resolution["TexNnum_half"][1] - 1 and crange == "quarter":
-                    bb_new = Resolution["TexNnum"][1] - bb - 1
-                    flip_y = True
-
-                Ht_aa_bb = np.flip(np.flip(H[aa_new, bb_new, c].toarray(), 0), 1)
-                temp = _sconv2_single_point_flip(
-                    tuple(img_size), current_pixel, Ht_aa_bb, flip_x, flip_y, "same")
-
-                ly = np.round(lens_vox_y - Resolution["TexNnum_half"][0] + aa).astype(int)
-                lx = np.round(lens_vox_x - Resolution["TexNnum_half"][1] + bb).astype(int)
-                valid_tex = ((lx < tex_size[1]) & (lx >= 0) & (ly < tex_size[0]) & (ly >= 0))
-
-                sy = -1 + lens_sen_y + np.round((-Resolution["TexNnum_half"][0] + aa + 1)
-                                                  / Resolution["texScaleFactor"][0])
-                sx = -1 + lens_sen_x + np.round((-Resolution["TexNnum_half"][1] + bb + 1)
-                                                  / Resolution["texScaleFactor"][1])
-                sy, sx = sy.astype(int), sx.astype(int)
-                valid_img = ((sx < img_size[1]) & (sx >= 0) & (sy < img_size[0]) & (sy >= 0))
-
-                valid = valid_img & valid_tex
-                if np.sum(valid) > 0:
-                    slice_c[ly[valid], lx[valid]] += temp[sy[valid], sx[valid]]
-
-        backproj[:, :, c] += slice_c
-
-    return backproj
+    row_lo = (y_extended // 2) - (y_length // 2)
+    row_hi = row_lo + y_length
+    col_lo = (x_extended // 2) - (x_length // 2)
+    col_hi = col_lo + x_length
+    return canvas[row_lo:row_hi, col_lo:col_hi]
 
 
-def compute_backward_patterns(H: np.ndarray, Resolution: dict,
-                               Camera: dict) -> np.ndarray:
-    """
-    Compute the backward projection operator Ht, then normalize.
+def build_forward_kernels(
+    camera: CameraParams,
+    resolution: Resolution,
+    used_rows_px: np.ndarray,
+    used_cols_px: np.ndarray,
+    theta_samples: int,
+    clamp_tol: float,
+) -> List[List[np.ndarray]]:
+    ulens_pattern = build_ulens_pattern(camera, resolution)
+    mla_array = build_mla_array(used_rows_px, used_cols_px, resolution, ulens_pattern)
 
-    For each sensor pixel (aa_sen, bb_sen) within one lenslet:
-      1. Back-project via H (rotated PSF) onto the volume
-      2. Center-shift the result
-      3. Normalize so each pixel's total contribution sums to 1
+    psf_stack = []
+    for depth_um in resolution.depths + camera.offset_fobj:
+        psf_stack.append(compute_native_plane_psf(float(depth_um), camera, resolution, theta_samples))
+    print(f"[PSF] built native PSF stack for depths {resolution.depths.tolist()}")
 
-    Parameters
-    ----------
-    H : np.ndarray
-        Forward operator from compute_forward_patterns.
-    Resolution : dict
-    Camera : dict
-        Needs 'range'.
+    kernels: List[List[np.ndarray]] = []
+    row_center = resolution.tex_nnum[0] // 2
+    col_center = resolution.tex_nnum[1] // 2
+    for local_row in range(resolution.tex_nnum[0]):
+        row_kernels: List[np.ndarray] = []
+        for local_col in range(resolution.tex_nnum[1]):
+            shift_row = local_row - row_center
+            shift_col = local_col - col_center
+            depth_kernels: List[np.ndarray] = []
+            for psf_ref in psf_stack:
+                psf_shift = integer_shift(psf_ref, shift_row, shift_col)
+                psf_mla = psf_shift * mla_array
+                sensor_field = prop_to_sensor(psf_mla, resolution.sensor_res, camera.mla_to_sensor, camera.wavelength)
+                sensor_field = integer_shift(sensor_field, -shift_row, -shift_col)
+                kernel = np.abs(sensor_field) ** 2
+                if kernel.max() > 0:
+                    kernel[kernel < kernel.max() * clamp_tol] = 0
+                    kernel_sum = kernel.sum()
+                    if kernel_sum > 0:
+                        kernel = kernel / kernel_sum
+                depth_kernels.append(kernel.astype(np.float64))
+            row_kernels.append(depth_kernels)
+        kernels.append(row_kernels)
+        print(f"[Kernel] row {local_row + 1:02d}/{resolution.tex_nnum[0]}")
 
-    Returns
-    -------
-    np.ndarray
-        Ht object array, shape (Nnum_half[0], Nnum_half[1], nDepths).
-    """
-    nd = H.shape[2]
-    img_size = np.array(H[0, 0, 0].shape)
+    return kernels
 
-    tex_size = np.ceil(img_size * np.array(Resolution["texScaleFactor"])).astype(int)
-    tex_size = tex_size + (1 - tex_size % 2)
 
-    offset_img = np.ceil(img_size / 2).astype(int)
-    offset_vol = np.ceil(tex_size / 2).astype(int)
+def build_pattern_ops(
+    kernels: Sequence[Sequence[Sequence[np.ndarray]]],
+    lenslet_rows_px: np.ndarray,
+    lenslet_cols_px: np.ndarray,
+    img_shape: Tuple[int, int],
+    tex_shape: Tuple[int, int],
+    resolution: Resolution,
+) -> List[PatternOp]:
+    pattern_ops: List[PatternOp] = []
+    img_offset_row = img_shape[0] // 2
+    img_offset_col = img_shape[1] // 2
+    tex_offset_row = tex_shape[0] // 2
+    tex_offset_col = tex_shape[1] // 2
+    local_row_center = resolution.tex_nnum[0] // 2
+    local_col_center = resolution.tex_nnum[1] // 2
 
-    lc = {
-        "px":  np.copy(Resolution["usedLensletCenters"]["px"]),
-        "vox": np.copy(Resolution["usedLensletCenters"]["vox"]),
+    for local_row in range(resolution.tex_nnum[0]):
+        for local_col in range(resolution.tex_nnum[1]):
+            if not resolution.tex_mask[local_row, local_col]:
+                continue
+
+            row_indices = lenslet_rows_px + tex_offset_row + (local_row - local_row_center)
+            col_indices = lenslet_cols_px + tex_offset_col + (local_col - local_col_center)
+            img_rows = lenslet_rows_px + img_offset_row + (local_row - local_row_center)
+            img_cols = lenslet_cols_px + img_offset_col + (local_col - local_col_center)
+
+            valid = (
+                (row_indices >= 0)
+                & (row_indices < tex_shape[0])
+                & (col_indices >= 0)
+                & (col_indices < tex_shape[1])
+                & (img_rows >= 0)
+                & (img_rows < img_shape[0])
+                & (img_cols >= 0)
+                & (img_cols < img_shape[1])
+            )
+            tex_indices = np.ravel_multi_index(
+                (row_indices[valid].astype(np.int64), col_indices[valid].astype(np.int64)),
+                tex_shape,
+            )
+            img_indices = np.ravel_multi_index(
+                (img_rows[valid].astype(np.int64), img_cols[valid].astype(np.int64)),
+                img_shape,
+            )
+            depth_kernels = [kernels[local_row][local_col][depth_idx] for depth_idx in range(len(resolution.depths))]
+            adjoint_kernels = [kernel[::-1, ::-1].copy() for kernel in depth_kernels]
+            pattern_ops.append(
+                PatternOp(
+                    local_coord=(local_row, local_col),
+                    tex_indices=tex_indices,
+                    img_indices=img_indices,
+                    kernels=depth_kernels,
+                    adjoint_kernels=adjoint_kernels,
+                )
+            )
+
+    print(f"[Pattern] active local coordinates: {len(pattern_ops)} / {resolution.tex_nnum[0] * resolution.tex_nnum[1]}")
+    return pattern_ops
+
+
+def build_lfm_system(
+    config_path: Path,
+    n_lenslets: int,
+    new_spacing_px: int,
+    depth_range: Tuple[float, float],
+    depth_step: float,
+    theta_samples: int,
+    clamp_tol: float,
+) -> LFMSystem:
+    camera = load_camera_params(config_path, new_spacing_px=new_spacing_px)
+    resolution = build_resolution(camera, depth_range=depth_range, depth_step=depth_step)
+    lenslet_rows_px, lenslet_cols_px = build_regular_lenslet_grid(n_lenslets=n_lenslets, spacing_px=new_spacing_px)
+    used_rows_px, used_cols_px = select_used_centers(
+        lenslet_rows_px,
+        lenslet_cols_px,
+        psf_size_lenslets=resolution.psf_size_lenslets,
+    )
+
+    img_shape = (n_lenslets * new_spacing_px, n_lenslets * new_spacing_px)
+    tex_shape = img_shape
+
+    kernels = build_forward_kernels(
+        camera=camera,
+        resolution=resolution,
+        used_rows_px=used_rows_px,
+        used_cols_px=used_cols_px,
+        theta_samples=theta_samples,
+        clamp_tol=clamp_tol,
+    )
+    pattern_ops = build_pattern_ops(
+        kernels=kernels,
+        lenslet_rows_px=lenslet_rows_px,
+        lenslet_cols_px=lenslet_cols_px,
+        img_shape=img_shape,
+        tex_shape=tex_shape,
+        resolution=resolution,
+    )
+    print(
+        "[System] "
+        f"img_shape={img_shape}, tex_shape={tex_shape}, "
+        f"sensor_res={resolution.sensor_res}, tex_res={resolution.tex_res}, "
+        f"depths={resolution.depths.tolist()}"
+    )
+
+    return LFMSystem(
+        camera=camera,
+        resolution=resolution,
+        lenslet_rows_px=lenslet_rows_px,
+        lenslet_cols_px=lenslet_cols_px,
+        img_shape=img_shape,
+        tex_shape=tex_shape,
+        pattern_ops=pattern_ops,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pipeline wrappers
+# ---------------------------------------------------------------------------
+
+def write_wave_model_config(metadata: dict, config_path: str | Path) -> None:
+    """Write the YAML config consumed by load_camera_params."""
+    microscope = metadata["microscope"]
+    mla = metadata["mla"]
+    payload = {
+        "gridType": str(mla["gridType"]),
+        "focus": str(mla["focus"]),
+        "plenoptic": int(mla["plenoptic"]),
+        "uLensMask": int(mla["uLensMask"]),
+        "M": float(microscope["M"]),
+        "NA": float(microscope["NA"]),
+        "ftl": float(microscope["ftl"]),
+        "fm": float(mla["fm"]),
+        "tube2mla": float(mla.get("tube2mla", 0.0)),
+        "mla2sensor": float(mla.get("mla2sensor", 0.0)),
+        "lensPitch": float(mla["lensPitch"]),
+        "pixelPitch": float(mla["pixelPitch"]),
+        "WaveLength": float(microscope["WaveLength"]),
+        "n": float(microscope["n"]),
     }
-    lc["px"][:, :, 0] += offset_img[0]
-    lc["px"][:, :, 1] += offset_img[1]
-    lc["vox"][:, :, 0] += offset_vol[0]
-    lc["vox"][:, :, 1] += offset_vol[1]
-
-    crange = Camera["range"]
-    if crange == "quarter":
-        coords_range = Resolution["Nnum_half"]
-    else:
-        coords_range = Resolution["Nnum"]
-
-    Ht = np.empty((coords_range[0], coords_range[1], nd), dtype=object)
-
-    for aa in trange(coords_range[0], ncols=70, desc="  Backward patterns"):
-        aa_tex = int(np.ceil((1 + aa) * Resolution["texScaleFactor"][0]))
-        for bb in range(coords_range[1]):
-            bb_tex = int(np.ceil((1 + bb) * Resolution["texScaleFactor"][1]))
-
-            cur_px = [aa + offset_img[0] - Resolution["Nnum_half"][0],
-                      bb + offset_img[1] - Resolution["Nnum_half"][1]]
-            bp = _backproject_single_pixel(H, Resolution, img_size, tex_size, cur_px, lc, crange)
-
-            for c in range(nd):
-                sy = int(np.round(Resolution["TexNnum_half"][0] - aa_tex))
-                sx = int(np.round(Resolution["TexNnum_half"][1] - bb_tex))
-                shifted = _imshift(bp[:, :, c], sy, sx)
-                Ht[aa, bb, c] = csr_matrix(shifted)
-
-    # Normalize Ht so each sensor pixel's total contribution sums to 1
-    for aa in range(Ht.shape[0]):
-        for bb in range(Ht.shape[1]):
-            s = sum(Ht[aa, bb, c].sum() for c in range(nd))
-            if not np.isclose(s, 0):
-                for c in range(nd):
-                    Ht[aa, bb, c] = Ht[aa, bb, c] / s
-
-    return Ht
+    path = Path(config_path)
+    with path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(payload, handle, sort_keys=False)
 
 
-def _threshold_small_values(H: np.ndarray, tol: float = 0.005) -> np.ndarray:
-    """Zero out values below tol*max and renormalize each PSF pattern."""
-    for a in range(H.shape[0]):
-        for b in range(H.shape[1]):
-            for c in range(H.shape[2]):
-                arr = H[a, b, c].toarray()
-                mx = arr.max()
-                arr[arr < mx * tol] = 0
-                s = arr.sum()
-                if s > 0:
-                    arr /= s
-                H[a, b, c] = csr_matrix(arr)
-    return H
+def build_volume_system(
+    config_path: str | Path,
+    n_lenslets: int,
+    new_spacing_px: int,
+    depth_range_um: tuple[float, float],
+    depth_step_um: float,
+    theta_samples: int,
+    kernel_tol: float,
+) -> LFMSystem:
+    """Construct the wave-model light-field system for the requested depth grid."""
+    return build_lfm_system(
+        config_path=Path(config_path),
+        n_lenslets=int(n_lenslets),
+        new_spacing_px=int(new_spacing_px),
+        depth_range=(float(depth_range_um[0]), float(depth_range_um[1])),
+        depth_step=float(depth_step_um),
+        theta_samples=int(theta_samples),
+        clamp_tol=float(kernel_tol),
+    )
 
 
-def compute_lf_operators(Camera: dict, Resolution: dict,
-                          lenslet_centers: dict) -> tuple:
-    """
-    Top-level entry point: compute (H, Ht) for the LFM configuration.
-
-    Steps:
-      1. Estimate PSF footprint size; extract used lenslet centers
-      2. Set up sensor/ML coordinate grids in Resolution
-      3. Compute Debye PSF stack at all depths
-      4. Compute MLA transmittance MLARRAY
-      5. Compute forward patterns H; threshold small values
-      6. Compute backward patterns Ht; normalize
-
-    Parameters
-    ----------
-    Camera : dict
-    Resolution : dict
-    lenslet_centers : dict
-
-    Returns
-    -------
-    H, Ht : np.ndarray (object dtype)
-    """
-    # PSF footprint
-    depth_range = np.array(Resolution["depthRange"]) + Camera["offsetFobj"]
-    p = np.argmax(np.abs(depth_range))
-    psf_size = compute_psf_size(depth_range[p], Camera)
-
-    used_centers = get_used_lenslet_centers(psf_size, lenslet_centers)
-    Resolution["usedLensletCenters"] = used_centers
-
-    # Coordinate spaces
-    half = int(max(Resolution["Nnum"][1] * psf_size,
-                   2 * Resolution["Nnum"][1]))
-    print(f"  PSF image size: {2*half+1} × {2*half+1} pixels")
-
-    Resolution["yspace"] = Resolution["sensorRes"][0] * np.arange(-half, half + 1)
-    Resolution["xspace"] = Resolution["sensorRes"][1] * np.arange(-half, half + 1)
-    Resolution["yMLspace"] = Resolution["sensorRes"][0] * np.arange(
-        -Resolution["Nnum_half"][0] + 1, Resolution["Nnum_half"][0])
-    Resolution["xMLspace"] = Resolution["sensorRes"][1] * np.arange(
-        -Resolution["Nnum_half"][1] + 1, Resolution["Nnum_half"][1])
-
-    # PSF stack
-    print("Step 1/3: Computing wave-optics PSF at all depths...")
-    psf_stack = compute_psf_all_depths(Camera, Resolution)
-
-    # MLA transmittance
-    print("Step 2/3: Computing MLA transmittance...")
-    ulens = compute_ulens_transmittance(Camera, Resolution)
-    mlarray = compute_mla_transmittance(Camera, Resolution, ulens)
-
-    # Forward patterns
-    print("Step 3a/3: Computing forward patterns H...")
-    H = compute_forward_patterns(psf_stack, mlarray, Camera, Resolution)
-    H = _threshold_small_values(H, tol=0.005)
-
-    # Backward patterns
-    print("Step 3b/3: Computing backward patterns Ht...")
-    Ht = compute_backward_patterns(H, Resolution, Camera)
-
-    return H, Ht
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# FFT Convolution (numpy, no CuPy)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _fft_conv2d(a: np.ndarray, b: np.ndarray, mode: str = "same") -> np.ndarray:
-    """
-    2D FFT-based convolution (numpy fallback of pyolaf/fftpack.py::cufftconv).
-
-    Parameters
-    ----------
-    a, b : np.ndarray
-        2D arrays to convolve.
-    mode : str
-        'full', 'same', or 'valid'.
-
-    Returns
-    -------
-    np.ndarray
-        Convolution result.
-    """
-    from scipy.fft import next_fast_len
-    s1 = np.array(a.shape[-2:])
-    s2 = np.array(b.shape[-2:])
-    shape = s1 + s2 - 1
-    fshape = [next_fast_len(int(d), True) for d in shape]
-
-    sp1 = np.fft.rfft2(a, fshape)
-    sp2 = np.fft.rfft2(b, fshape)
-    ret = np.fft.irfft2(sp1 * sp2, fshape)
-
-    # Crop
-    if mode == "full":
-        cropped = ret[:shape[0], :shape[1]]
-    elif mode == "same":
-        start = (np.array(shape) - s1) // 2
-        cropped = ret[start[0]:start[0] + s1[0], start[1]:start[1] + s1[1]]
-    elif mode == "valid":
-        vs = s1 - s2 + 1
-        start = (np.array(shape) - vs) // 2
-        cropped = ret[start[0]:start[0] + vs[0], start[1]:start[1] + vs[1]]
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
-    return cropped
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Forward and Backward Projection (fast, uses precomputed H/Ht)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _get_indices_forward(lenslet_centers: dict, Resolution: dict,
-                          img_size: np.ndarray, tex_size: np.ndarray) -> tuple:
-    """Precompute texture→image index mappings for forward projection."""
-    texnum = Resolution["TexNnum"]
-    texnum_half = Resolution["TexNnum_half"]
-    tex_scale = Resolution["texScaleFactor"]
-
-    offset_img = np.ceil(img_size / 2)
-    offset_vol = np.ceil(tex_size / 2)
-    lY = lenslet_centers["vox"][:, :, 0] + offset_vol[0]
-    lX = lenslet_centers["vox"][:, :, 1] + offset_vol[1]
-
-    idx_tex, idx_img = {}, {}
-    for aa in range(texnum[0]):
-        for bb in range(texnum[1]):
-            lYc = np.round(lY - texnum_half[0] + aa + 1)
-            lXc = np.round(lX - texnum_half[1] + bb + 1)
-
-            lYp = np.ceil((lYc - offset_vol[0]) / tex_scale[0] + offset_img[0]) - 1
-            lXp = np.ceil((lXc - offset_vol[1]) / tex_scale[1] + offset_img[1]) - 1
-
-            valid = ((lYc < tex_size[0]) & (lYc >= 0) & (lXc < tex_size[1]) & (lXc >= 0)
-                     & (lYp < img_size[0]) & (lYp >= 0) & (lXp < img_size[1]) & (lXp >= 0))
-
-            idx_tex[(aa, bb)] = (lYc[valid].astype(int), lXc[valid].astype(int))
-            idx_img[(aa, bb)] = (lYp[valid].astype(int), lXp[valid].astype(int))
-
-    return idx_tex, idx_img
-
-
-def forward_project(H: np.ndarray, volume: np.ndarray,
-                    lenslet_centers: dict, Resolution: dict,
-                    img_size: np.ndarray, Camera: dict) -> np.ndarray:
-    """
-    Forward project a 3D volume to a 2D light field image: m_hat = A·v.
-
-    For each depth c and texture coordinate (aa, bb):
-      1. Scatter volume voxels to a temporary image at lenslet positions
-      2. Convolve with H[aa, bb, c] PSF via FFT
-      3. Accumulate into projection image
-
-    Parameters
-    ----------
-    H : np.ndarray
-        Forward operator (object array of csr_matrix).
-    volume : np.ndarray
-        3D volume, shape (texH, texW, nDepths), float32.
-    lenslet_centers : dict
-    Resolution : dict
-    img_size : np.ndarray
-        Output image size [H, W].
-    Camera : dict
-
-    Returns
-    -------
-    np.ndarray
-        Light field image, shape img_size, float32.
-    """
-    texnum = Resolution["TexNnum"]
-    texMask = Resolution["texMask"]
-    tex_size = np.array(volume.shape[:2])
-    nd = H.shape[2]
-    crange = Camera["range"]
-
-    idx_tex, idx_img = _get_indices_forward(lenslet_centers, Resolution, img_size, tex_size)
-
-    # Extract dense filters
-    texnum_half = Resolution["TexNnum_half"]
-    fshape = H[0, 0, 0].shape
-    filters = np.zeros((texnum[0], texnum[1], nd, fshape[0], fshape[1]), dtype="float32")
-    for c in range(nd):
-        for aa in range(texnum[0]):
-            aa_new = aa
-            flip_x = False
-            if crange == "quarter" and aa >= texnum_half[0]:
-                aa_new = texnum[0] - aa - 1
-                flip_x = True
-            for bb in range(texnum[1]):
-                if texMask[aa, bb] == 0:
-                    continue
-                bb_new = bb
-                flip_y = False
-                if crange == "quarter" and bb >= texnum_half[1]:
-                    bb_new = texnum[1] - bb - 1
-                    flip_y = True
-                h = H[aa_new, bb_new, c].toarray()
-                if flip_x:
-                    h = np.flipud(h)
-                if flip_y:
-                    h = np.fliplr(h)
-                filters[aa, bb, c] = h
-
-    projection = np.zeros(img_size, dtype="float32")
-    for c in trange(nd, ncols=70, desc="  Forward project"):
-        vol_c = volume[:, :, c]
-        for aa in range(texnum[0]):
-            for bb in range(texnum[1]):
-                if texMask[aa, bb] == 0:
-                    continue
-                it = idx_tex[(aa, bb)]
-                ii = idx_img[(aa, bb)]
-                tmp = np.zeros(img_size, dtype="float32")
-                tmp[ii] = vol_c[it]
-                projection += _fft_conv2d(tmp, filters[aa, bb, c], mode="same").astype("float32")
-
-    return projection
-
-
-def _get_indices_backward(lenslet_centers: dict, Resolution: dict,
-                           img_size: np.ndarray, tex_size: np.ndarray) -> tuple:
-    """Precompute image→texture index mappings for backward projection."""
-    num = Resolution["Nnum"]
-    num_half = Resolution["Nnum_half"]
-    tex_scale = Resolution["texScaleFactor"]
-
-    offset_img = np.ceil(img_size / 2)
-    offset_vol = np.ceil(tex_size / 2)
-    lY = lenslet_centers["px"][:, :, 0] + offset_img[0]
-    lX = lenslet_centers["px"][:, :, 1] + offset_img[1]
-
-    idx_tex, idx_img = {}, {}
-    for aa in range(num[0]):
-        for bb in range(num[1]):
-            lYp = np.round(lY - num_half[0] + aa)
-            lXp = np.round(lX - num_half[1] + bb)
-
-            lYv = np.ceil((lYp - offset_img[0] + 1) * tex_scale[0] + offset_vol[0]) - 1
-            lXv = np.ceil((lXp - offset_img[1] + 1) * tex_scale[1] + offset_vol[1]) - 1
-
-            valid = ((lYv < tex_size[0]) & (lYv >= 0) & (lXv < tex_size[1]) & (lXv >= 0)
-                     & (lYp < img_size[0]) & (lYp >= 0) & (lXp < img_size[1]) & (lXp >= 0))
-
-            idx_img[(aa, bb)] = (lYp[valid].astype(int), lXp[valid].astype(int))
-            idx_tex[(aa, bb)] = (lYv[valid].astype(int), lXv[valid].astype(int))
-
-    return idx_tex, idx_img
-
-
-def backward_project(Ht: np.ndarray, lf_image: np.ndarray,
-                     lenslet_centers: dict, Resolution: dict,
-                     tex_size: np.ndarray, Camera: dict) -> np.ndarray:
-    """
-    Backward project a 2D light field image to a 3D volume: v_hat = A^T · m.
-
-    Parameters
-    ----------
-    Ht : np.ndarray
-        Backward operator (object array of csr_matrix).
-    lf_image : np.ndarray
-        2D sensor image, float32.
-    lenslet_centers : dict
-    Resolution : dict
-    tex_size : np.ndarray
-        Output texture size [texH, texW].
-    Camera : dict
-
-    Returns
-    -------
-    np.ndarray
-        Back-projected volume, shape (texH, texW, nDepths), float32.
-    """
-    num = Resolution["Nnum"]
-    num_half = Resolution["Nnum_half"]
-    sensMask = Resolution["sensMask"]
-    nd = Ht.shape[2]
-    img_size = np.array(lf_image.shape)
-    crange = Camera["range"]
-
-    idx_tex, idx_img = _get_indices_backward(lenslet_centers, Resolution, img_size, tex_size)
-
-    # Extract dense backward filters
-    fshape = Ht[0, 0, 0].shape
-    filters = np.zeros((num[0], num[1], nd, fshape[0], fshape[1]), dtype="float32")
-    for c in range(nd):
-        for aa in range(num[0]):
-            aa_new = aa
-            flip_x = False
-            if crange == "quarter" and aa >= num_half[0]:
-                aa_new = num[0] - aa - 1
-                flip_x = True
-            for bb in range(num[1]):
-                if sensMask[aa, bb] == 0:
-                    continue
-                bb_new = bb
-                flip_y = False
-                if crange == "quarter" and bb >= num_half[1]:
-                    bb_new = num[1] - bb - 1
-                    flip_y = True
-                h = Ht[aa_new, bb_new, c].toarray()
-                if flip_x:
-                    h = np.flipud(h)
-                if flip_y:
-                    h = np.fliplr(h)
-                filters[aa, bb, c] = h
-
-    backproj = np.zeros((tex_size[0], tex_size[1], nd), dtype="float32")
-    for c in trange(nd, ncols=70, desc="  Backward project"):
-        for aa in range(num[0]):
-            for bb in range(num[1]):
-                if sensMask[aa, bb] == 0:
-                    continue
-                ii = idx_img[(aa, bb)]
-                it = idx_tex[(aa, bb)]
-                tmp = np.zeros(tex_size, dtype="float32")
-                tmp[it] = lf_image[ii]
-                backproj[:, :, c] += _fft_conv2d(tmp, filters[aa, bb, c], mode="same").astype("float32")
-
-    return backproj
+def compute_conventional_image(
+    system,
+    object_2d: np.ndarray,
+    target_depth_um: float,
+    theta_samples: int,
+) -> np.ndarray:
+    """Compute the defocused conventional-microscope baseline image."""
+    psf_wave = compute_native_plane_psf(
+        float(target_depth_um + system.camera.offset_fobj),
+        system.camera,
+        system.resolution,
+        int(theta_samples),
+    )
+    psf_intensity = np.abs(psf_wave) ** 2
+    psf_sum = float(psf_intensity.sum())
+    if psf_sum > 0:
+        psf_intensity /= psf_sum
+    return signal.fftconvolve(
+        np.asarray(object_2d, dtype=np.float64),
+        np.asarray(psf_intensity, dtype=np.float64),
+        mode="same",
+    ).astype(np.float64)

@@ -57,22 +57,21 @@ def load_metadata(data_dir):
     Returns:
         dict with keys: N, pixel_size_rad, n_frames, total_flux, etc.
     """
-    with open(os.path.join(data_dir, 'meta_data'), 'r') as f:
+    with open(os.path.join(data_dir, 'meta_data.json'), 'r') as f:
         return json.load(f)
 
 
-def load_ground_truth(task_dir):
-    """Load ground-truth video from evaluation/reference_outputs/.
+def load_ground_truth(data_dir):
+    """Load ground-truth video from data/ground_truth.npz.
 
     Args:
-        task_dir: root task directory
+        data_dir: path to data/ directory
 
     Returns:
         (n_frames, N, N) ndarray
     """
-    gt_path = os.path.join(task_dir, 'evaluation', 'reference_outputs',
-                           'ground_truth.npy')
-    return np.load(gt_path)
+    gt_path = os.path.join(data_dir, 'ground_truth.npz')
+    return np.load(gt_path)['images']
 
 
 def build_per_frame_models(obs, meta):
@@ -93,21 +92,17 @@ def build_per_frame_models(obs, meta):
     return models
 
 
-def prepare_data(data_dir, task_dir=None):
+def prepare_data(data_dir):
     """Load all data needed for reconstruction.
 
     Args:
         data_dir: path to data/ directory
-        task_dir: root task directory (defaults to parent of data_dir)
 
     Returns:
         (obs, meta, gt): observation dict, metadata dict, ground truth array
     """
-    if task_dir is None:
-        task_dir = os.path.dirname(data_dir)
-
     obs = load_observation(data_dir)
     meta = load_metadata(data_dir)
-    gt = load_ground_truth(task_dir)
+    gt = load_ground_truth(data_dir)
 
     return obs, meta, gt

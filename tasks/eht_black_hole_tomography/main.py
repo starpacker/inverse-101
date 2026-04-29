@@ -74,32 +74,32 @@ def main():
     # ----------------------------------------------------------------
     # Step 5: Visualize and save
     # ----------------------------------------------------------------
-    os.makedirs("output", exist_ok=True)
+    os.makedirs("evaluation/reference_outputs", exist_ok=True)
 
     plot_emission_slices(emission_3d, obs_data['fov_M'],
                          ground_truth=ground_truth['emission_3d'],
-                         save_path="output/emission_slices.png")
+                         save_path="evaluation/reference_outputs/emission_slices.png")
 
     plot_movie_comparison(pred_movie, ground_truth['images'],
                           obs_data['t_frames'],
-                          save_path="output/movie_comparison.png")
+                          save_path="evaluation/reference_outputs/movie_comparison.png")
 
     plot_lightcurve(pred_movie, ground_truth['images'],
                     obs_data['t_frames'],
-                    save_path="output/lightcurve.png")
+                    save_path="evaluation/reference_outputs/lightcurve.png")
 
     plot_loss_curves(result['loss_history'],
-                     save_path="output/loss_curve.png")
+                     save_path="evaluation/reference_outputs/loss_curve.png")
 
     # Save primary output
-    np.save("output/reconstruction.npy", emission_3d)
-    np.save("output/pred_images.npy", pred_movie)
-    np.save("output/loss_history.npy", np.array(result['loss_history']))
+    np.save("evaluation/reference_outputs/reconstruction.npy", emission_3d)
+    np.save("evaluation/reference_outputs/pred_images.npy", pred_movie)
+    np.save("evaluation/reference_outputs/loss_history.npy", np.array(result['loss_history']))
 
-    with open("output/metrics.json", 'w') as f:
+    with open("evaluation/reference_outputs/metrics.json", 'w') as f:
         json.dump(all_metrics, f, indent=2)
 
-    print(f"\nResults saved to output/")
+    print(f"\nResults saved to evaluation/reference_outputs/")
     print("Done.")
 
 

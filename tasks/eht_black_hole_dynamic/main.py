@@ -28,8 +28,7 @@ def main():
     print('=' * 60)
 
     from src.preprocessing import load_observation, load_metadata, \
-        load_ground_truth, build_per_frame_models
-    from src.physics_model import gauss_image_covariance
+        load_ground_truth, build_per_frame_models    from src.physics_model import gauss_image_covariance
     from src.solvers import StaticPerFrameSolver, StarWarpsSolver
     from src.visualization import compute_video_metrics, print_metrics_table, \
         plot_video_comparison, plot_metrics_over_time, plot_angle_time
@@ -39,7 +38,7 @@ def main():
     data_dir = os.path.join(TASK_DIR, 'data')
     obs = load_observation(data_dir)
     meta = load_metadata(data_dir)
-    gt = load_ground_truth(TASK_DIR)
+    gt = load_ground_truth(data_dir)
 
     N = meta['N']
     psize = meta['pixel_size_rad']
@@ -126,7 +125,7 @@ def main():
 
     # ── 6. Save ───────────────────────────────────────────────────────
     print('[6/6] Saving outputs ...')
-    out_dir = os.path.join(TASK_DIR, 'output')
+    out_dir = os.path.join(TASK_DIR, 'evaluation', 'reference_outputs')
     os.makedirs(out_dir, exist_ok=True)
 
     # Save reconstructions

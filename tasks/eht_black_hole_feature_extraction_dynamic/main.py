@@ -42,7 +42,21 @@ def main():
     npix = metadata["npix"]
     fov_uas = metadata["fov_uas"]
     frame_times = np.array(metadata["frame_times_hr"])
-    gt_per_frame = metadata["ground_truth_per_frame"]
+
+    # Load ground truth from ground_truth.npz
+    import numpy as _np
+    _gt = _np.load("data/ground_truth.npz")
+    _pa   = _gt["position_angle_deg"]
+    _diam = _gt["diameter_uas"]
+    _wid  = _gt["width_uas"]
+    _asym = _gt["asymmetry"]
+    gt_per_frame = [
+        {"position_angle_deg": float(_pa[i]),
+         "diameter_uas":       float(_diam[i]),
+         "width_uas":          float(_wid[i]),
+         "asymmetry":          float(_asym[i])}
+        for i in range(n_frames)
+    ]
 
     print(f"  Frames         : {n_frames}")
     print(f"  Image          : {npix}x{npix}, FOV={fov_uas} μas")
@@ -132,19 +146,19 @@ def main():
     print(f"\n{'=' * 60}")
     print("Step 3: Generating visualizations...")
     print(f"{'=' * 60}")
-    os.makedirs("output", exist_ok=True)
+    os.makedirs("evaluation/reference_outputs", exist_ok=True)
 
     param_names = ["diameter (μas)", "width (μas)", "asymmetry", "PA (deg)"]
 
     # Ridge plot (Figure 13 style)
     plot_ridge(
         all_params, param_names, gt_per_frame, all_weights,
-        frame_times, save_path="output/ridge_plot.png")
+        frame_times, save_path="evaluation/reference_outputs/ridge_plot.png")
 
     # Parameter evolution with error bars
     plot_param_evolution(
         all_params, param_names, gt_per_frame, all_weights,
-        frame_times, save_path="output/param_evolution.png")
+        frame_times, save_path="evaluation/reference_outputs/param_evolution.png")
 
     # Frame images montage
     # Generate ground truth images for comparison
@@ -161,7 +175,7 @@ def main():
         all_images, frame_times,
         pixel_size_uas=fov_uas / npix,
         gt_images=gt_images,
-        save_path="output/frame_images.png")
+        save_path="evaluation/reference_outputs/frame_images.png")
 
     # ── Step 4: Compute and print metrics ───────────────────────────────────
     print("\nStep 4: Parameter recovery metrics...")
@@ -171,14 +185,14 @@ def main():
 
     # ── Step 5: Save outputs ────────────────────────────────────────────────
     print("\nStep 5: Saving outputs...")
-    np.save("output/all_params.npy", np.array(all_params))
-    np.save("output/all_weights.npy", np.array(all_weights))
-    np.save("output/all_images.npy", np.array(all_images))
+    np.save("evaluation/reference_outputs/all_params.npy", np.array(all_params))
+    np.save("evaluation/reference_outputs/all_weights.npy", np.array(all_weights))
+    np.save("evaluation/reference_outputs/all_images.npy", np.array(all_images))
 
     # Save per-frame loss histories
     for i, loss in enumerate(all_losses):
         if loss:
-            np.save(f"output/loss_frame_{i:02d}.npy", loss)
+            np.save(f"evaluation/reference_outputs/loss_frame_{i:02d}.npy", loss)
 
     # Save metrics
     all_metrics = {
@@ -191,10 +205,10 @@ def main():
         'avg_abs_bias': np.mean(np.abs(metrics['biases']), axis=0).tolist(),
         'avg_std': np.mean(metrics['stds'], axis=0).tolist(),
     }
-    with open("output/metrics.json", "w") as f:
+    with open("evaluation/reference_outputs/metrics.json", "w") as f:
         json.dump(all_metrics, f, indent=2)
 
-    print("\nDone. Outputs saved to output/")
+    print("\nDone. Outputs saved to evaluation/reference_outputs/")
     return all_params, all_weights, all_metrics
 
 

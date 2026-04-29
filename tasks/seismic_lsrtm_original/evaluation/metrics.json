@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "Gaussian-smoothed LSRTM image baseline (sigma=2 grid cells, center-cropped)",
+      "ncc_vs_ref": 0.9225,
+      "nrmse_vs_ref": 0.0728
+    }
+  ],
+  "ncc_boundary": 0.8303,
+  "nrmse_boundary": 0.0801
+}

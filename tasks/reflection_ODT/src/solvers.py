@@ -216,7 +216,6 @@ class ReflectionBPMReconstructor:
         """
         config = model.config
         nz, ny, nx = config.volume_shape
-        n_angles = config.n_angles
         n_pixels = ny * nx
 
         meas = measurements.to(self.device)
@@ -232,17 +231,22 @@ class ReflectionBPMReconstructor:
         for step in range(self.n_iter):
             total_loss = 0.0
 
-            # Accumulate gradient over all angles
-            for m in range(n_angles):
-                pred_intensity = model.forward_single(dn, m)
+            # Accumulate gradient over all rings and angles
+            global_idx = 0
+            for ring in config.illumination_rings:
+                na = ring["NA"]
+                n_ang = ring["n_angles"]
+                for m in range(n_ang):
+                    pred_intensity = model.forward_single_ring(dn, na, m, n_ang)
 
-                # Amplitude-domain MSE, normalised per pixel
-                pred_amp = torch.sqrt(pred_intensity + 1e-12)
-                meas_amp = meas[m]
-                loss_m = torch.sum((pred_amp - meas_amp) ** 2) / n_pixels
+                    # Amplitude-domain MSE, normalised per pixel
+                    pred_amp = torch.sqrt(pred_intensity + 1e-12)
+                    meas_amp = meas[global_idx]
+                    loss_m = torch.sum((pred_amp - meas_amp) ** 2) / n_pixels
 
-                loss_m.backward()
-                total_loss += loss_m.item()
+                    loss_m.backward()
+                    total_loss += loss_m.item()
+                    global_idx += 1
 
             loss_history.append(total_loss)
             print(f"  Iteration {step + 1}/{self.n_iter}, loss = {total_loss:.6f}")

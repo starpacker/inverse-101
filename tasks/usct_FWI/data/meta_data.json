@@ -1,0 +1,20 @@
+{
+  "nx": 480,
+  "ny": 480,
+  "dh_um": 50,
+  "domain_size_cm": [24, 24],
+  "n_transducers_total": 512,
+  "n_transducers_active": 256,
+  "subsample_factor": 2,
+  "transducer_geometry": "circular",
+  "frequencies_MHz": [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75,
+                      0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25],
+  "background_velocity_mps": 1480,
+  "velocity_bounds_mps": [1300, 1700],
+  "mute_distance_um": 7500,
+  "cbs_ppw": 8,
+  "cbs_lamb": 1,
+  "cbs_energy_threshold": 1e-5,
+  "cbs_born_max": 500,
+  "cbs_boundary_widths": 20
+}

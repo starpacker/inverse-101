@@ -4,5 +4,3 @@ matplotlib>=3.4
 tqdm>=4.60
 torch>=1.9
 torchkbnufft>=1.0
-ehtim>=1.2
-astropy>=4.0

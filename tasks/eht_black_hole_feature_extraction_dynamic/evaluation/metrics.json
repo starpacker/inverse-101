@@ -1,0 +1,9 @@
+{
+  "baseline": [
+    {
+      "method": "alpha-DPI importance resampling",
+      "position_angle_mae_deg": 6.1
+    }
+  ],
+  "position_angle_mae_boundary_deg": 6.7
+}

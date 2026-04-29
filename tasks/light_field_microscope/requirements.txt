@@ -2,4 +2,4 @@ numpy>=1.21
 scipy>=1.7
 matplotlib>=3.4
 scikit-image>=0.18
-tqdm>=4.60
+PyYAML>=6.0

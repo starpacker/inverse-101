@@ -1,0 +1,14 @@
+{
+  "wavelength_m": 6.328e-07,
+  "zo_m": 0.05,
+  "Nd": 128,
+  "dxd_m": 7.2e-05,
+  "No": 542,
+  "dxp_m": 3.4331597222222227e-06,
+  "entrance_pupil_diameter_m": 0.00026435,
+  "num_scan_positions": 100,
+  "bit_depth": 14,
+  "propagator": "Fraunhofer",
+  "operation_mode": "CPM",
+  "description": "Synthetic CP dataset: focused probe, USAF 1951 phase object (phi_max=pi/2), Fermat scan grid"
+}

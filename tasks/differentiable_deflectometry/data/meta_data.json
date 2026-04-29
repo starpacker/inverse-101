@@ -1,0 +1,27 @@
+{
+    "task_name": "differentiable_deflectometry",
+    "paper": {
+        "title": "Towards self-calibrated lens metrology by differentiable refractive deflectometry",
+        "authors": ["Congli Wang", "Ni Chen", "Wolfgang Heidrich"],
+        "venue": "OSA Optics Express",
+        "year": 2021,
+        "url": "https://vccimaging.org/Publications/Wang2021DiffDeflectometry/"
+    },
+    "lens": {
+        "name": "LE1234-A",
+        "file": "ThorLabs/LE1234-A.txt"
+    },
+    "imaging": {
+        "filmsize": [768, 768],
+        "full_filmsize": [2048, 2048],
+        "sinusoid_periods": [70, 100, 110],
+        "sinusoid_period_index": 0,
+        "sinusoid_xs": [0],
+        "display_pixel_size_mm": 0.115,
+        "max_image_val": 65535.0
+    },
+    "calibration": {
+        "texture_shift": [0.0, 1.1106231],
+        "origin_shift": [0.0, 0.0, 0.0]
+    }
+}

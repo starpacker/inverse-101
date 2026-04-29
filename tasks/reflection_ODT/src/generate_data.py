@@ -60,7 +60,7 @@ if __name__ == "__main__":
 
     measurements, phantom_dn, metadata = generate_measurements(device=device)
 
-    os.makedirs("output", exist_ok=True)
-    np.save("output/measurements.npy", measurements)
-    np.save("output/ground_truth.npy", phantom_dn)
-    print(f"Saved measurements {measurements.shape} and ground truth {phantom_dn.shape}")
+    np.savez("data/raw_data.npz", measurements=measurements[np.newaxis])
+    np.savez("data/ground_truth.npz", delta_n=phantom_dn[np.newaxis])
+    print(f"Saved data/raw_data.npz     measurements: {measurements[np.newaxis].shape}")
+    print(f"Saved data/ground_truth.npz delta_n:      {phantom_dn[np.newaxis].shape}")

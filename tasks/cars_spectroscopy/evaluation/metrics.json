@@ -1,0 +1,13 @@
+{
+  "baseline": [
+    {
+      "method": "scipy least_squares with G-matrix CARS forward model",
+      "ncc_vs_ref": 0.998360879739001,
+      "nrmse_vs_ref": 0.01823990675524816,
+      "temperature_error_K": 8.435820548995707
+    }
+  ],
+  "ncc_boundary": 0.898525,
+  "nrmse_boundary": 0.020064,
+  "temperature_error_K_boundary": 50.0
+}

@@ -220,8 +220,8 @@ def compute_metrics(estimate: np.ndarray, ground_truth: np.ndarray) -> dict:
     gt = ground_truth.astype(np.float64)
     est = estimate.astype(np.float64)
 
-    # NRMSE
-    nrmse = np.linalg.norm(est - gt) / (np.linalg.norm(gt) + 1e-12)
+    # NRMSE (RMS error normalised by dynamic range of ground truth)
+    nrmse = np.sqrt(np.mean((est - gt)**2)) / (gt.max() - gt.min() + 1e-12)
 
     # Normalised cross-correlation
     gt_centered = gt - gt.mean()

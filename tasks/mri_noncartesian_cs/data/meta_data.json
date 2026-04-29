@@ -1,0 +1,12 @@
+{
+  "image_size": [
+    128,
+    128
+  ],
+  "n_coils": 4,
+  "n_spokes": 64,
+  "n_readout": 128,
+  "trajectory_type": "golden_angle_radial",
+  "noise_std": 0.005,
+  "data_source": "synthetic_shepp_logan"
+}

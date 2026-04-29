@@ -1,0 +1,20 @@
+{
+  "baseline": [
+    {
+      "method": "KLIP-ADI K=10, SVD, mean combination (torchKLIP reference)",
+      "ncc_vs_ref": 1.0,
+      "nrmse_vs_ref": 0.0,
+      "snr_beta_pic_b": 17.88
+    },
+    {
+      "method": "KLIP-ADI K=20, SVD, mean combination",
+      "ncc_vs_ref": 0.6545,
+      "nrmse_vs_ref": 0.0204,
+      "snr_beta_pic_b": 11.74
+    }
+  ],
+  "ncc_boundary": 0.589,
+  "nrmse_boundary": 0.0225,
+  "snr_boundary": 10.0,
+  "notes": "Primary metric: NCC and NRMSE vs K=10 reference image. Secondary: SNR of Beta Pic b >= 10."
+}

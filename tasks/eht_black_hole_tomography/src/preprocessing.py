@@ -22,7 +22,7 @@ def load_metadata(data_dir="data"):
     metadata : dict
         Dictionary with simulation and training parameters.
     """
-    path = os.path.join(data_dir, "meta_data")
+    path = os.path.join(data_dir, "meta_data.json")
     with open(path, 'r') as f:
         return json.load(f)
 
@@ -47,11 +47,9 @@ def load_observation(data_dir="data"):
         't_geo' : torch.Tensor
         't_frames' : np.ndarray, shape (n_frames,)
         'images' : torch.Tensor, shape (n_frames, num_alpha, num_beta) — noisy
-        'images_true' : torch.Tensor — clean target images
         'fov_M' : float
         't_start_obs' : float
         't_injection' : float
-        'rot_axis_true' : np.ndarray, shape (3,)
     """
     path = os.path.join(data_dir, "raw_data.npz")
     data = np.load(path)
@@ -67,11 +65,9 @@ def load_observation(data_dir="data"):
         't_geo': torch.tensor(data['ray_t_geo'], dtype=torch.float32),
         't_frames': data['t_frames'].astype(np.float32),
         'images': torch.tensor(data['images_noisy'], dtype=torch.float32),
-        'images_true': torch.tensor(data['images_true'], dtype=torch.float32),
         'fov_M': float(data['fov_M']),
         't_start_obs': float(data['t_start_obs']),
         't_injection': float(data['t_injection']),
-        'rot_axis_true': data['rot_axis_true'],
     }
     return obs_data
 
@@ -92,13 +88,13 @@ def load_ground_truth(data_dir="data"):
         'images' : np.ndarray, shape (n_frames, num_alpha, num_beta)
         'rot_axis' : np.ndarray, shape (3,)
     """
-    path = os.path.join(data_dir, "raw_data.npz")
+    path = os.path.join(data_dir, "ground_truth.npz")
     data = np.load(path)
 
     return {
-        'emission_3d': data['emission_true'],
-        'images': data['images_true'],
-        'rot_axis': data['rot_axis_true'],
+        'emission_3d': data['emission_3d'],
+        'images': data['images'],
+        'rot_axis': data['rot_axis'],
     }
 
 

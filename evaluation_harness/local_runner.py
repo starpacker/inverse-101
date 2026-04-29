@@ -59,9 +59,17 @@ class LocalRunner:
             log.info("Installing task requirements in isolated environment…")
             venv_path = self.workspace / ".venv"
             self.exec(f"python -m venv {venv_path}")
-            self.exec(f"{venv_path}/bin/pip install -q -r {req}")
+            # Windows uses Scripts/, Unix uses bin/
+            import sys
+            if sys.platform == "win32":
+                venv_bin = venv_path / "Scripts"
+            else:
+                venv_bin = venv_path / "bin"
+            self.exec(f"{venv_bin}/pip install -q -r {req}")
+            # Ensure pytest is always available for scoring
+            self.exec(f"{venv_bin}/pip install -q pytest")
             # Store venv path so exec() can prepend it to PATH
-            self._venv_bin = str(venv_path / "bin")
+            self._venv_bin = str(venv_bin)
         else:
             self._venv_bin = None
 
@@ -75,27 +83,51 @@ class LocalRunner:
         command = command.replace("/workspace", str(self.workspace))
         
         # Minimal whitelist environment
+        import sys
+        path_sep = ";" if sys.platform == "win32" else ":"
         safe_env = {
             "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
             "LANG": os.environ.get("LANG", "C.UTF-8"),
+            "PYTHONIOENCODING": "utf-8",
             "PYTHONPATH": str(self.workspace),
-            "HOME": str(self.workspace),
+            # Use real HOME to avoid matplotlib/config init errors
+            "HOME": os.environ.get("HOME", os.environ.get("USERPROFILE", str(self.workspace))),
+            "USERPROFILE": os.environ.get("USERPROFILE", str(self.workspace)),
+            # Windows needs these for temp files
+            "TEMP": os.environ.get("TEMP", ""),
+            "TMP": os.environ.get("TMP", ""),
+            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
         }
-        
+
         # Prepend venv bin to PATH so `python` resolves to venv Python
         venv_bin = getattr(self, "_venv_bin", None)
         if venv_bin:
-            safe_env["PATH"] = venv_bin + ":" + safe_env["PATH"]
+            safe_env["PATH"] = venv_bin + path_sep + safe_env["PATH"]
         
         try:
-            result = subprocess.run(
-                ["bash", "-c", command],
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-                cwd=str(self.workspace),
-                env=safe_env,
-            )
+            if sys.platform == "win32":
+                # On Windows, use cmd.exe instead of bash
+                result = subprocess.run(
+                    ["cmd.exe", "/c", command],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=self.timeout,
+                    cwd=str(self.workspace),
+                    env=safe_env,
+                )
+            else:
+                result = subprocess.run(
+                    ["bash", "-c", command],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=self.timeout,
+                    cwd=str(self.workspace),
+                    env=safe_env,
+                )
             # Preserve stderr separately to avoid truncating critical errors
             stdout = result.stdout.strip()
             stderr = result.stderr.strip()
@@ -142,7 +174,7 @@ class LocalRunner:
         assert self.workspace, "Workspace not started"
         full_path = self._resolve_path(path)
         full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(content)
+        full_path.write_text(content, encoding="utf-8")
 
     def read_file(self, path: str) -> str:
         """Read a file from the workspace.
@@ -167,7 +199,7 @@ class LocalRunner:
                     f"print(np.load('{path}').files)\"` to inspect.")
         # Layer 2: fallback for unknown binary files
         try:
-            return full_path.read_text()
+            return full_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             return f"[Error reading {path}]: Binary file, cannot read as text."
 
@@ -176,7 +208,8 @@ class LocalRunner:
         if self.workspace and self.workspace.exists():
             # --- Archive model-generated code before deletion ---
             try:
-                archive_base = Path("/data/yjh/function_eval_code_archive")
+                # Archive to project-local directory
+                archive_base = Path(__file__).resolve().parent.parent / "results" / "code_archive"
                 archive_base.mkdir(parents=True, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 # Extract task name from task_dir for a meaningful folder name
@@ -196,6 +229,12 @@ class LocalRunner:
                     shutil.copytree(ws_plan, archive_dir / "plan", dirs_exist_ok=True)
                     log.info("Archived model plan: %s/plan -> %s/plan", self.workspace, archive_dir)
 
+                # Also copy main.py
+                ws_main = self.workspace / "main.py"
+                if ws_main.is_file():
+                    shutil.copy2(ws_main, archive_dir / "main.py")
+                    log.info("Archived main.py")
+
                 # Also copy output/ if it exists
                 ws_output = self.workspace / "output"
                 if ws_output.is_dir():
@@ -207,7 +246,8 @@ class LocalRunner:
                 meta_path.write_text(
                     f"workspace: {self.workspace}\n"
                     f"task_dir: {self.task_dir}\n"
-                    f"archived_at: {datetime.now().isoformat()}\n"
+                    f"archived_at: {datetime.now().isoformat()}\n",
+                    encoding="utf-8",
                 )
             except Exception as e:
                 log.warning("Failed to archive workspace: %s", e)

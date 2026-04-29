@@ -1,0 +1,16 @@
+{
+  "baseline": [
+    {
+      "method": "Log-linear T2 fit",
+      "ncc_vs_ref": 0.9982,
+      "nrmse_vs_ref": 0.0444
+    },
+    {
+      "method": "Nonlinear least-squares T2 fit",
+      "ncc_vs_ref": 0.9988,
+      "nrmse_vs_ref": 0.0371
+    }
+  ],
+  "ncc_boundary": 0.8989,
+  "nrmse_boundary": 0.0408
+}

@@ -124,7 +124,7 @@ def main():
     print('\n[3/6] Creating Gaussian prior ...')
     prior = _make_gaussian_prior(N, psize, fwhm_uas=20.0, total_flux=total_flux)
 
-    gt = np.load(os.path.join(TASK_DIR, 'evaluation', 'reference_outputs', 'ground_truth.npy'))
+    gt = np.load(os.path.join(TASK_DIR, 'data', 'ground_truth.npz'))['image']
 
     # ── 4. Reconstruct ──────────────────────────────────────────────────
     print('\n[4/6] Reconstructing ...')
@@ -183,7 +183,7 @@ def main():
 
     # ── 6. Save ─────────────────────────────────────────────────────────
     print('\n[6/6] Saving outputs ...')
-    out_dir = os.path.join(TASK_DIR, 'output')
+    out_dir = os.path.join(TASK_DIR, 'evaluation', 'reference_outputs')
     os.makedirs(out_dir, exist_ok=True)
     np.save(os.path.join(out_dir, 'reconstruction.npy'), results['Closure-only (corrupt)'])
 

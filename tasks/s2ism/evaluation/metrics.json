@@ -1,0 +1,16 @@
+{
+  "baseline": [
+    {
+      "method": "s2ISM ML-EM (50 iterations)",
+      "ncc_vs_ref": 0.8994570116433562,
+      "nrmse_vs_ref": 0.1448993456717419
+    },
+    {
+      "method": "ISM sum (confocal-like)",
+      "ncc_vs_ref": 0.518547858783477,
+      "nrmse_vs_ref": 0.4661139910361108
+    }
+  ],
+  "ncc_boundary": 0.809511,
+  "nrmse_boundary": 0.159389
+}

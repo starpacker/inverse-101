@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "CS-MRI L1-Wavelet (lambda=1e-3, db4)",
+      "ncc_vs_ref": 0.8715,
+      "nrmse_vs_ref": 0.1143
+    }
+  ],
+  "ncc_boundary": 0.7844,
+  "nrmse_boundary": 0.1257
+}

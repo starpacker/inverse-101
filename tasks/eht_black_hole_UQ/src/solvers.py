@@ -372,6 +372,12 @@ class DPISolver:
         Maximum entropy prior weight. Default: 1024.0.
     grad_clip : float
         Gradient clipping threshold. Default: 0.1.
+    data_warmup : bool
+        Enable data weight warm-up schedule. Default: True.
+    warmup_starting_order : int
+        Initial data weight = 10^(-starting_order). Default: 4.
+    warmup_decay_rate : int
+        Epochs for data weight to increase by one order of magnitude. Default: 2000.
     device : torch.device or None
         Computation device. Auto-detects if None.
     """
@@ -379,7 +385,9 @@ class DPISolver:
     def __init__(self, npix=32, n_flow=16, seqfrac=4, n_epoch=10000,
                  batch_size=32, lr=1e-4, logdet_weight=1.0, l1_weight=1.0,
                  tsv_weight=100.0, flux_weight=1000.0, center_weight=1.0,
-                 mem_weight=1024.0, grad_clip=0.1, device=None):
+                 mem_weight=1024.0, grad_clip=0.1,
+                 data_warmup=True, warmup_starting_order=4,
+                 warmup_decay_rate=2000, device=None):
         self.npix = npix
         self.n_flow = n_flow
         self.seqfrac = seqfrac
@@ -393,6 +401,9 @@ class DPISolver:
         self.center_weight = center_weight
         self.mem_weight = mem_weight
         self.grad_clip = grad_clip
+        self.data_warmup = data_warmup
+        self.warmup_starting_order = warmup_starting_order
+        self.warmup_decay_rate = warmup_decay_rate
 
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -537,7 +548,15 @@ class DPISolver:
                           imgcenter_weight * loss_center +
                           imgl1_weight * loss_l1)
 
-            loss = (torch.mean(loss_data) + torch.mean(loss_prior)
+            # Data weight warm-up: gradually increase data fidelity weight
+            if self.data_warmup:
+                data_weight = min(
+                    10 ** (-self.warmup_starting_order + k / self.warmup_decay_rate),
+                    1.0)
+            else:
+                data_weight = 1.0
+
+            loss = (data_weight * torch.mean(loss_data) + torch.mean(loss_prior)
                     - logdet_weight * torch.mean(logdet))
 
             optimizer.zero_grad()
@@ -575,7 +594,8 @@ class DPISolver:
                       f"loss={loss_history['total'][-1]:.4f}  "
                       f"cphase={loss_history['cphase'][-1]:.4f}  "
                       f"camp={loss_history['logca'][-1]:.4f}  "
-                      f"logdet={loss_history['logdet'][-1]:.4f}")
+                      f"logdet={loss_history['logdet'][-1]:.4f}  "
+                      f"dw={data_weight:.4f}")
 
         # Convert to arrays
         for key in loss_history:

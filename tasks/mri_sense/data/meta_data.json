@@ -1,0 +1,12 @@
+{
+  "image_shape": [
+    128,
+    128
+  ],
+  "n_coils": 8,
+  "phantom": "Shepp-Logan",
+  "sensitivity_model": "Gaussian CSM",
+  "acceleration": 4,
+  "acs_width": 16,
+  "undersampling": "phase-encode uniform"
+}

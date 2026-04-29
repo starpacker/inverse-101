@@ -37,9 +37,38 @@ def main():
     with open(DATA_DIR / "meta_data.json") as f:
         meta = json.load(f)
 
+    # Fitting parameters (hard-coded defaults; removed from meta_data.json to avoid leaking solver params)
+    meta.setdefault("fit_params_aberration", {
+        "frame_min": -1,
+        "frame_max": -1,
+        "disparity_max": 5.0,
+        "disparity_step": 0.1,
+        "dist_search": 0.5,
+        "angle_tolerance": 2.0,
+        "threshold": 1.0,
+        "min_views": 3,
+        "z_calib": None,
+    })
+    meta.setdefault("aberration_params", {
+        "axial_window": 1.0,
+        "photon_threshold": 1,
+        "min_views": 3,
+    })
+    meta.setdefault("fit_params_full", {
+        "frame_min": -1,
+        "frame_max": -1,
+        "disparity_max": 8.0,
+        "disparity_step": 0.1,
+        "dist_search": 0.5,
+        "angle_tolerance": 1.0,
+        "threshold": 0.3,
+        "min_views": 2,
+        "z_calib": 1.534,
+    })
+
     # --- Step 1: Preprocessing ---
     print("Loading 2D localisations...")
-    locs_2d_csv = load_localizations(DATA_DIR / "raw_data.csv", meta)
+    locs_2d_csv = load_localizations(DATA_DIR / "raw_data.npz", meta)
     locs_2d_csv = center_localizations(locs_2d_csv)
     n_frames = int(np.unique(locs_2d_csv[:, 0]).shape[0])
     print(f"  {locs_2d_csv.shape[0]:,} localisations in {n_frames:,} frames")

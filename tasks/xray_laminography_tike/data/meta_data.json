@@ -1,0 +1,16 @@
+{
+  "volume_shape": [
+    128,
+    128,
+    128
+  ],
+  "n_angles": 128,
+  "tilt_rad": 1.5707963705062866,
+  "tilt_deg": 90.0,
+  "theta_range_rad": [
+    0.0,
+    3.141592653589793
+  ],
+  "volume_dtype": "complex64",
+  "description": "Simulated laminography dataset from a downsampled NALM phantom with asymmetric marker. Tilt angle is pi/2 (standard tomography)."
+}

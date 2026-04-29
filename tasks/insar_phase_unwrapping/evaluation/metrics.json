@@ -1,0 +1,12 @@
+{
+    "baseline": [
+        {
+            "method": "SPURS (ADMM with G0 sparsity penalty, DCT-based Poisson solver, 15 iterations)",
+            "ncc_vs_ref": 0.9008,
+            "nrmse_vs_ref": 0.0715
+        }
+    ],
+    "ncc_boundary": 0.8107,
+    "nrmse_boundary": 0.0787,
+    "nrmse_definition": "NRMSE is computed after subtracting the global median offset (spurs - snaphu) from the reconstruction, then normalised by the dynamic range of the SNAPHU reference: NRMSE = RMSE(spurs_aligned, snaphu) / (max(snaphu) - min(snaphu)). The offset correction is necessary because phase unwrapping is only defined up to a global additive constant."
+}

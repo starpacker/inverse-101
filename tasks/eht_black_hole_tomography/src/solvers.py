@@ -357,12 +357,10 @@ class BHNeRFSolver:
             net_width=meta['net_width'],
         ).to(self.device)
 
-        # Learnable rotation axis (parameterized as unnormalized 3-vector)
-        # Initialize from a reasonable guess
-        rot_axis_param = nn.Parameter(
-            torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32,
-                         device=self.device)
-        )
+        # Fixed rotation axis (z-axis), following the original bhnerf convention.
+        # The original code does NOT optimize the rotation axis.
+        rot_axis_fixed = torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32,
+                                      device=self.device)
         max_grad_norm = 1.0
 
         # Move data to device
@@ -377,7 +375,7 @@ class BHNeRFSolver:
         # Optimizer with polynomial LR schedule
         lr_init = meta['lr_init']
         lr_final = meta['lr_final']
-        all_params = list(model.parameters()) + [rot_axis_param]
+        all_params = list(model.parameters())
         optimizer = torch.optim.Adam(all_params, lr=lr_init)
 
         def lr_lambda(step):
@@ -397,9 +395,6 @@ class BHNeRFSolver:
             batch_idx = np.random.choice(n_frames, min(batch_size, n_frames),
                                          replace=False)
 
-            # Normalize rotation axis
-            rot_axis = rot_axis_param / (torch.norm(rot_axis_param) + 1e-8)
-
             total_loss = torch.tensor(0.0, device=self.device)
 
             for idx in batch_idx:
@@ -407,7 +402,7 @@ class BHNeRFSolver:
 
                 # Forward: predict emission on rays
                 emission = model(t, ray_coords, Omega, t_start_obs, t_geo,
-                                 t_injection, rot_axis)
+                                 t_injection, rot_axis_fixed)
 
                 # Volume render
                 pred_image = volume_render(emission, g_doppler, dtau, Sigma)
@@ -419,14 +414,8 @@ class BHNeRFSolver:
             total_loss = total_loss / len(batch_idx)
             total_loss.backward()
 
-            # Clip gradients to prevent NaN
+            # Clip gradients
             torch.nn.utils.clip_grad_norm_(all_params, max_grad_norm)
-
-            # Replace NaN gradients with zeros
-            for p in all_params:
-                if p.grad is not None and torch.isnan(p.grad).any():
-                    p.grad = torch.where(torch.isnan(p.grad),
-                                         torch.zeros_like(p.grad), p.grad)
 
             optimizer.step()
             scheduler.step()
@@ -435,12 +424,7 @@ class BHNeRFSolver:
             loss_history.append(loss_val)
 
         self.model = model
-        rot_axis_np = rot_axis_param.detach().cpu().numpy()
-        norm = np.linalg.norm(rot_axis_np)
-        if norm > 1e-8 and np.all(np.isfinite(rot_axis_np)):
-            self.rot_axis = rot_axis_np / norm
-        else:
-            self.rot_axis = np.array([0.0, 0.0, 1.0])
+        self.rot_axis = np.array([0.0, 0.0, 1.0])
         self._obs_data = obs_data
         self._is_trained = True
 

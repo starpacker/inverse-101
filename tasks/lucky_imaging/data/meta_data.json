@@ -1,0 +1,12 @@
+{
+  "n_frames": 101,
+  "height": 960,
+  "width": 1280,
+  "n_channels": 3,
+  "fps": 59.0,
+  "bit_depth": 8,
+  "color_mode": "RGB",
+  "source_format": "AVI",
+  "source_file": "short_video.avi",
+  "description": "Lunar surface observation captured with a planetary imaging camera"
+}

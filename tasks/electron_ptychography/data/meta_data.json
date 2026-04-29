@@ -1,0 +1,9 @@
+{
+    "energy_eV": 300000,
+    "R_pixel_size_A": 2.39,
+    "convergence_semiangle_mrad": 22.6,
+    "scan_shape": [48, 48],
+    "detector_shape": [192, 192],
+    "defocus_A": 355,
+    "com_rotation_deg": 169
+}

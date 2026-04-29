@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "conventional microscope baseline",
+      "ncc_vs_ref": 0.8021,
+      "nrmse_vs_ref": 0.098
+    }
+  ],
+  "ncc_boundary": 0.7219,
+  "nrmse_boundary": 0.1078
+}

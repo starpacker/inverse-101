@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "MCR-NNLS",
+      "ncc_vs_ref": 0.9773,
+      "nrmse_vs_ref": 0.1141
+    }
+  ],
+  "ncc_boundary": 0.8796,
+  "nrmse_boundary": 0.1255
+}

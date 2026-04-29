@@ -64,6 +64,7 @@ def generate_eval_figures(
     run_label: str = "",
     task_name: str = "",
     pixel_size_uas: float | None = None,
+    observation: np.ndarray | None = None,
 ) -> dict[str, str]:
     """Generate all evaluation figures for one run.
 
@@ -83,6 +84,9 @@ def generate_eval_figures(
         Task name for figure titles.
     pixel_size_uas : float | None
         If provided, axes are labeled in micro-arcseconds.
+    observation : ndarray | None
+        Observation image (e.g. dirty image) for the first panel. If None,
+        the function will attempt to compute a dirty image from the task data.
 
     Returns
     -------
@@ -102,8 +106,8 @@ def generate_eval_figures(
 
     paths: dict[str, str] = {}
 
-    # --- 1. Side-by-side comparison ---
-    p = _plot_comparison(recon, gt, metrics, output_dir, run_label, task_name, pixel_size_uas)
+    # --- 1. Side-by-side comparison: Observation | Ground Truth | Reconstruction ---
+    p = _plot_comparison(recon, gt, metrics, output_dir, run_label, task_name, pixel_size_uas, observation=observation)
     if p:
         paths["comparison"] = str(p)
 
@@ -163,6 +167,88 @@ def generate_comparison_chart(
 
 
 # ===================================================================
+# Observation helpers
+# ===================================================================
+
+
+def compute_dirty_image(
+    raw_data_path: Path,
+    meta_data_path: Path,
+    npix: int = 64,
+) -> np.ndarray | None:
+    """Compute a dirty image from visibility data for the observation panel.
+
+    Parameters
+    ----------
+    raw_data_path : Path
+        Path to raw_data.npz containing ``vis_cal`` / ``vis_corrupt`` and ``uv_coords``.
+    meta_data_path : Path
+        Path to meta_data JSON containing ``fov_uas`` and ``npix``.
+    npix : int
+        Number of pixels (overridden by meta_data if available).
+
+    Returns
+    -------
+    2-D ndarray (dirty image) or None if data is unavailable.
+    """
+    import json
+
+    try:
+        data = np.load(raw_data_path)
+        # Try calibrated visibilities first, fall back to corrupt
+        if "vis_cal" in data:
+            vis = data["vis_cal"]
+        elif "vis_corrupt" in data:
+            vis = data["vis_corrupt"]
+        else:
+            log.warning("No visibility data found in %s", raw_data_path)
+            return None
+
+        uv = data["uv_coords"]  # shape (N, 2)
+
+        # Load metadata for FOV
+        meta = json.loads(meta_data_path.read_text(encoding="utf-8"))
+        fov_rad = float(meta.get("fov_uas", 160)) * 4.848136811095e-12  # uas → rad
+        npix = int(meta.get("npix", npix))
+
+        # Grid visibilities onto a 2D UV plane and IFFT
+        pixel_size_rad = fov_rad / npix
+        uv_max = 1.0 / (2.0 * pixel_size_rad)  # Nyquist
+
+        grid = np.zeros((npix, npix), dtype=complex)
+        weights = np.zeros((npix, npix), dtype=float)
+
+        for i in range(len(vis)):
+            u, v = uv[i]
+            # Map to grid indices
+            gi = int(np.round(u / uv_max * (npix / 2))) + npix // 2
+            gj = int(np.round(v / uv_max * (npix / 2))) + npix // 2
+            if 0 <= gi < npix and 0 <= gj < npix:
+                grid[gj, gi] += vis[i]
+                weights[gj, gi] += 1.0
+                # Hermitian conjugate
+                gi2 = npix - 1 - gi
+                gj2 = npix - 1 - gj
+                if 0 <= gi2 < npix and 0 <= gj2 < npix:
+                    grid[gj2, gi2] += np.conj(vis[i])
+                    weights[gj2, gi2] += 1.0
+
+        # Normalize
+        mask = weights > 0
+        grid[mask] /= weights[mask]
+
+        # IFFT to image domain
+        dirty = np.real(np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(grid))))
+        # Clip negative artifacts
+        dirty = np.maximum(dirty, 0)
+        return dirty
+
+    except Exception as e:
+        log.warning("Failed to compute dirty image: %s", e)
+        return None
+
+
+# ===================================================================
 # Internal plotting functions
 # ===================================================================
 
@@ -191,7 +277,7 @@ def _safe_prefix(run_label: str) -> str:
 
 
 # -------------------------------------------------------------------
-# 1. Side-by-side: GT | Reconstruction | Difference
+# 1. Side-by-side: Observation | Ground Truth | Reconstruction
 # -------------------------------------------------------------------
 def _plot_comparison(
     recon: np.ndarray,
@@ -201,23 +287,38 @@ def _plot_comparison(
     run_label: str,
     task_name: str,
     pixel_size_uas: float | None,
+    observation: np.ndarray | None = None,
 ) -> Path | None:
     try:
-        fig = plt.figure(figsize=(16, 5))
-        gs = GridSpec(1, 4, width_ratios=[1, 1, 1, 0.05], figure=fig)
+        fig = plt.figure(figsize=(18, 5.5))
+        gs = GridSpec(1, 3, width_ratios=[1, 1, 1], figure=fig, wspace=0.25)
 
         extent = _img_extent(gt.shape[0], pixel_size_uas)
         vmax = gt.max()
 
-        # Ground truth
+        # --- Panel 1: Observation (dirty image) ---
         ax0 = fig.add_subplot(gs[0])
-        im0 = ax0.imshow(gt, cmap="afmhot", origin="lower", extent=extent, vmin=0, vmax=vmax)
-        ax0.set_title("Ground Truth", fontsize=11)
+        if observation is not None:
+            obs_disp = observation.astype(np.float64)
+            im0 = ax0.imshow(obs_disp, cmap="afmhot", origin="lower", extent=extent)
+            ax0.set_title("Observation (Dirty Image)", fontsize=11)
+        else:
+            # Placeholder: show text indicating no observation available
+            ax0.text(0.5, 0.5, "Observation\nnot available",
+                     ha="center", va="center", fontsize=14, color="gray",
+                     transform=ax0.transAxes)
+            ax0.set_title("Observation", fontsize=11)
         _axis_labels(ax0, pixel_size_uas)
 
-        # Reconstruction
+        # --- Panel 2: Ground Truth ---
         ax1 = fig.add_subplot(gs[1])
-        im1 = ax1.imshow(recon, cmap="afmhot", origin="lower", extent=extent, vmin=0, vmax=vmax)
+        im1 = ax1.imshow(gt, cmap="afmhot", origin="lower", extent=extent, vmin=0, vmax=vmax)
+        ax1.set_title("Ground Truth", fontsize=11)
+        _axis_labels(ax1, pixel_size_uas)
+
+        # --- Panel 3: Reconstruction ---
+        ax2 = fig.add_subplot(gs[2])
+        im2 = ax2.imshow(recon, cmap="afmhot", origin="lower", extent=extent, vmin=0, vmax=vmax)
         # Build metrics subtitle
         m_str = ""
         if metrics:
@@ -226,20 +327,8 @@ def _plot_comparison(
                 if k in metrics and metrics[k] is not None:
                     parts.append(f"{k.upper()}={metrics[k]:.3f}")
             m_str = "\n" + "  ".join(parts)
-        ax1.set_title(f"Reconstruction{m_str}", fontsize=10)
-        _axis_labels(ax1, pixel_size_uas)
-
-        # Difference
-        diff = recon - gt
-        ax2 = fig.add_subplot(gs[2])
-        vlim = max(abs(diff.min()), abs(diff.max()))
-        im2 = ax2.imshow(diff, cmap="RdBu_r", origin="lower", extent=extent, vmin=-vlim, vmax=vlim)
-        ax2.set_title("Difference (Recon − GT)", fontsize=11)
+        ax2.set_title(f"Reconstruction{m_str}", fontsize=10)
         _axis_labels(ax2, pixel_size_uas)
-
-        # Colorbars
-        cbar_ax = fig.add_subplot(gs[3])
-        fig.colorbar(im2, cax=cbar_ax, label="Residual")
 
         title = f"{task_name} — {run_label}" if task_name else run_label
         fig.suptitle(title, fontsize=13, y=1.02)

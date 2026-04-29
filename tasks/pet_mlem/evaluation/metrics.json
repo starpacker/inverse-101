@@ -1,0 +1,16 @@
+{
+  "baseline": [
+    {
+      "method": "MLEM (50 iterations)",
+      "ncc_vs_ref": 0.983,
+      "nrmse_vs_ref": 0.059
+    },
+    {
+      "method": "OSEM (10 iters, 6 subsets)",
+      "ncc_vs_ref": 0.9849,
+      "nrmse_vs_ref": 0.0554
+    }
+  ],
+  "ncc_boundary": 0.8864,
+  "nrmse_boundary": 0.061
+}

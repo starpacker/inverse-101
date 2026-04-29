@@ -57,7 +57,7 @@ def load_metadata(data_dir: str = "data") -> dict:
     -------
     dict with imaging parameters (N, pixel_size_rad, etc.)
     """
-    path = os.path.join(data_dir, "meta_data")
+    path = os.path.join(data_dir, "meta_data.json")
     with open(path) as f:
         return json.load(f)
 

@@ -1,0 +1,13 @@
+{
+  "baseline": [
+    {
+      "method": "mPIE (7 rounds x 50 iterations)",
+      "ncc_vs_ref": 0.9757,
+      "nrmse_vs_ref": 0.0434
+    }
+  ],
+  "ncc_boundary": 0.878,
+  "nrmse_boundary": 0.0477,
+  "nrmse_definition": "NRMSE = sqrt(mean((phase_recon - phase_gt)^2)) / (max(phase_gt) - min(phase_gt)), where phase_gt = angle(GT) - mean(angle(GT)) and phase_recon = angle(recon) - mean(angle(recon)). Mean subtraction resolves the global phase ambiguity of ptychographic reconstruction.",
+  "ncc_definition": "NCC = dot(phase_recon.flatten(), phase_gt.flatten()) / (||phase_recon|| * ||phase_gt||) (cosine similarity on mean-subtracted phase maps, per CLAUDE.md standard)."
+}

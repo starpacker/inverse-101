@@ -27,6 +27,7 @@ class EvalResult:
     mode: str = ""
     model: str = ""
     framework: str = "react"  # "react" | "multi_agent"
+    level: str = "L1"  # end-to-end difficulty: "L1" | "L2" | "L3"
     timestamp: str = ""
     # Tests
     tests_total: int = 0
@@ -74,6 +75,7 @@ class Scorer:
             mode=self.config.task.mode,
             model=self.config.llm.model,
             framework=self.config.framework,
+            level=self.config.task.level,
             timestamp=datetime.now(timezone.utc).isoformat(),
             prompt_tokens=llm_usage.get("prompt_tokens", 0),
             completion_tokens=llm_usage.get("completion_tokens", 0),
@@ -101,10 +103,11 @@ class Scorer:
         # Quality metrics for end-to-end (sole evaluation criterion)
         if self.config.task.mode == "end_to_end":
             result.quality_metrics = self._compute_quality_metrics()
-            # Generate visualization figures
-            result.visualization_paths = self._generate_visualizations(
-                result.quality_metrics, result
-            )
+            # Visualization is handled by a dedicated downstream agent,
+            # not the end-to-end evaluation pipeline.
+            # result.visualization_paths = self._generate_visualizations(
+            #     result.quality_metrics, result
+            # )
 
         return result
 
@@ -158,9 +161,18 @@ class Scorer:
         import shutil as _shutil
 
         # Ensure the ground truth file is available in the sandbox
-        gt_host = self.config.task.task_dir / "evaluation" / "reference_outputs" / "ground_truth.npy"
-        if not gt_host.exists():
-            log.warning("Ground truth file not found: %s", gt_host)
+        # Check multiple possible locations for ground truth
+        gt_candidates = [
+            self.config.task.task_dir / "evaluation" / "reference_outputs" / "ground_truth.npy",
+            self.config.task.task_dir / "data" / "ground_truth.npy",
+        ]
+        gt_host = None
+        for candidate in gt_candidates:
+            if candidate.exists():
+                gt_host = candidate
+                break
+        if gt_host is None:
+            log.warning("Ground truth file not found in any location: %s", gt_candidates)
             return {"error": "ground_truth.npy not found in task directory"}
 
         # Copy ground truth into the sandbox workspace
@@ -264,6 +276,8 @@ print(json.dumps({"nrmse": round(nrmse, 4), "ncc": round(ncc, 4),
         # --- Load arrays ---
         gt_path = self.config.task.task_dir / "evaluation" / "reference_outputs" / "ground_truth.npy"
         if not gt_path.exists():
+            gt_path = self.config.task.task_dir / "data" / "ground_truth.npy"
+        if not gt_path.exists():
             log.warning("ground_truth.npy not found — cannot generate figures")
             return {}
 
@@ -308,7 +322,7 @@ print(json.dumps({"nrmse": round(nrmse, 4), "ncc": round(ncc, 4),
         from .plan_scorer import evaluate_plan
         from dataclasses import asdict as _asdict
 
-        readme = (self.config.task.task_dir / "README.md").read_text()
+        readme = (self.config.task.task_dir / "README.md").read_text(encoding="utf-8")
 
         # Read the generated plan files from the container
         generated_approach = self.runner.read_file("plan/approach.md")
@@ -321,8 +335,8 @@ print(json.dumps({"nrmse": round(nrmse, 4), "ncc": round(ncc, 4),
         # Read reference (golden) plan from the task directory
         ref_approach_path = self.config.task.task_dir / "plan" / "approach.md"
         ref_design_path = self.config.task.task_dir / "plan" / "design.md"
-        reference_approach = ref_approach_path.read_text() if ref_approach_path.exists() else ""
-        reference_design = ref_design_path.read_text() if ref_design_path.exists() else ""
+        reference_approach = ref_approach_path.read_text(encoding="utf-8") if ref_approach_path.exists() else ""
+        reference_design = ref_design_path.read_text(encoding="utf-8") if ref_design_path.exists() else ""
 
         log.info("Evaluating plan quality (pairwise + rubric)...")
         score = evaluate_plan(
@@ -338,12 +352,52 @@ print(json.dumps({"nrmse": round(nrmse, 4), "ncc": round(ncc, 4),
 
     # ------------------------------------------------------------------
     def save(self, result: EvalResult, output_dir: Path) -> Path:
+        """Save evaluation result.
+
+        For function mode, saves into a structured directory:
+            results/function_mode/{task}/{model_date}/{module}/result.json
+            results/function_mode/{task}/{model_date}/{module}/src/{module}.py
+        For other modes, saves flat JSON files in output_dir.
+        """
+        if result.mode == "function" and self.config.task.target_function:
+            return self._save_function_mode(result, output_dir)
+
         output_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Sanitize model name for filename (replace / with _)
         safe_model = result.model.replace("/", "_").replace("\\", "_")
-        name = f"{result.task_name}_{result.mode}_{result.framework}_{safe_model}_{ts}.json"
+        # Include level in filename for end-to-end mode
+        level_suffix = f"_{result.level}" if result.mode == "end_to_end" else ""
+        name = f"{result.task_name}_{result.mode}{level_suffix}_{result.framework}_{safe_model}_{ts}.json"
         path = output_dir / name
-        path.write_text(json.dumps(asdict(result), indent=2))
+        path.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
         log.info("Results saved to %s", path)
         return path
+
+    def _save_function_mode(self, result: EvalResult, output_dir: Path) -> Path:
+        """Save function-mode result into structured directory layout."""
+        module = self.config.task.target_function.split(".")[0]
+        safe_model = result.model.replace("/", "_").replace("\\", "_")
+        date_str = datetime.now().strftime("%Y%m%d")
+
+        # results/function_mode/{task}/{model_date}/{module}/
+        mod_dir = output_dir / "function_mode" / result.task_name / f"{safe_model}_{date_str}" / module
+        mod_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save result.json
+        result_path = mod_dir / "result.json"
+        result_path.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
+        log.info("Function-mode result saved to %s", result_path)
+
+        # Copy model-generated target module source from sandbox
+        workspace = Path(self.runner.container) if hasattr(self.runner, 'container') and self.runner.container else None
+        if workspace:
+            src_file = workspace / "src" / f"{module}.py"
+            if src_file.exists():
+                dst_src = mod_dir / "src"
+                dst_src.mkdir(exist_ok=True)
+                import shutil
+                shutil.copy2(src_file, dst_src / f"{module}.py")
+                log.info("Archived model code: %s -> %s", src_file, dst_src / f"{module}.py")
+
+        return result_path

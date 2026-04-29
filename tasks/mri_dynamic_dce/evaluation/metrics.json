@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "Temporal TV via Proximal Gradient Descent (lambda=0.001, 200 iter)",
+      "ncc_vs_ref": 0.9752,
+      "nrmse_vs_ref": 0.0606
+    }
+  ],
+  "ncc_boundary": 0.8777,
+  "nrmse_boundary": 0.0667
+}

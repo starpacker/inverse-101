@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "Universal back-projection (Xu & Wang 2005), 31x31 detectors",
+      "ncc_vs_ref": 0.6099,
+      "nrmse_vs_ref": 0.359
+    }
+  ],
+  "ncc_boundary": 0.5489,
+  "nrmse_boundary": 0.3949
+}

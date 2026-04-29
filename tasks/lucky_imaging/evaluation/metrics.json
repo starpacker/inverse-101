@@ -1,0 +1,20 @@
+{
+  "baseline": [
+    {
+      "method": "PlanetarySystemStacker full pipeline (reference)",
+      "ncc_vs_ref": 1.0,
+      "nrmse_vs_ref": 0.0,
+      "sharpness_ratio_vs_best": 3.0
+    },
+    {
+      "method": "best single frame (trivial baseline)",
+      "ncc_vs_ref": 0.9683,
+      "nrmse_vs_ref": 0.0253,
+      "sharpness_ratio_vs_best": 1.0
+    }
+  ],
+  "ncc_boundary": 0.9683,
+  "nrmse_boundary": 0.0253,
+  "sharpness_ratio_vs_best_boundary": 1.5,
+  "sharpness_definition": "Laplacian variance of the luminance channel: std(cv2.Laplacian(mono_uint8, cv2.CV_64F)). sharpness_ratio_vs_best = sharpness(output) / sharpness(best_frame), where best_frame is evaluation/reference_outputs/best_frame.npy."
+}

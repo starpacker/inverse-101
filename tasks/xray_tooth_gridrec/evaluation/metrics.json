@@ -1,0 +1,7 @@
+{
+  "baseline": [
+    {"method": "FBP with ramp filter", "ncc_vs_ref": 0.9819, "nrmse_vs_ref": 0.0294}
+  ],
+  "ncc_boundary": 0.8837,
+  "nrmse_boundary": 0.0323
+}

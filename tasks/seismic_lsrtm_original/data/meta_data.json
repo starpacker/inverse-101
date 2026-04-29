@@ -1,0 +1,35 @@
+{
+  "preprocessing": {
+    "full_model_shape": [
+      2301,
+      751
+    ],
+    "subregion_shape": [
+      600,
+      250
+    ],
+    "dx_m": 4.0
+  },
+  "velocity": {
+    "v_true_min_m_s": 1500.0,
+    "v_true_max_m_s": 1960.0
+  },
+  "acquisition": {
+    "n_shots": 20,
+    "d_source": 20,
+    "first_source": 10,
+    "source_depth": 2,
+    "n_receivers_per_shot": 100,
+    "d_receiver": 6,
+    "first_receiver": 0,
+    "receiver_depth": 2
+  },
+  "wavelet": {
+    "frequency_hz": 25,
+    "peak_time_s": 0.06
+  },
+  "time": {
+    "nt": 300,
+    "dt_s": 0.004
+  }
+}

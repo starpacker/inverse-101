@@ -1,0 +1,16 @@
+{
+  "n_slices": 1,
+  "n_coils": 15,
+  "kspace_shape": [
+    15,
+    640,
+    368
+  ],
+  "image_shape": [
+    320,
+    320
+  ],
+  "acceleration": 4,
+  "center_fraction": 0.08,
+  "acquisition": "CORPD_FBK"
+}

@@ -1,0 +1,33 @@
+{
+  "baseline": [
+    {
+      "method": "Stolt f-k coherent compounding (7 angles)",
+      "ncc_fibers_vs_ref": 0.9998,
+      "nrmse_fibers_vs_ref": 0.0389,
+      "ncc_cysts_vs_ref": 1.0,
+      "nrmse_cysts_vs_ref": 0.0726,
+      "psf_fwhm_mm": {
+        "z_10mm": 2.682,
+        "z_20mm": 2.682,
+        "z_30mm": 1.490,
+        "z_40mm": 1.490,
+        "z_50mm": 1.788,
+        "z_60mm": 3.576,
+        "z_70mm": 2.086,
+        "z_80mm": 2.086,
+        "mean": 2.235
+      },
+      "cnr": {
+        "cyst_1": 0.518,
+        "cyst_2": 0.050,
+        "mean": 0.284
+      }
+    }
+  ],
+  "ncc_fibers_boundary": 0.9,
+  "nrmse_fibers_boundary": 0.1,
+  "ncc_cysts_boundary": 0.9,
+  "nrmse_cysts_boundary": 0.1,
+  "psf_fwhm_mm_mean_boundary": 2.458,
+  "cnr_mean_boundary": 0.256
+}

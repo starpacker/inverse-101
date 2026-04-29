@@ -19,7 +19,8 @@ Inverting this over-determined system (multiple views → OLS) gives (x₀, y₀
 ## Step-by-Step Algorithm
 
 ### 1. Preprocessing
-- Load PeakFit CSV (pixel coordinates) → scale to microns using `pixel_size_sample`
+- Load raw PeakFit localisations from `raw_data.npz`, extract the required columns,
+  and scale pixel-based quantities to microns using `pixel_size_sample`
 - Centre X, Y by subtracting their means (aligns data with MLA centre)
 
 ### 2. Optics Model
@@ -87,3 +88,41 @@ For the BCR B cell dataset:
 - Z range: −3 to +6 µm (thin membrane structure)
 
 These numbers match the precision values reported in Sims et al. (2020, Optica) for this type of FLFM configuration.
+
+## Default Parameters
+
+These values are hard-coded in `main.py` and were removed from `meta_data.json` (which is reserved for imaging parameters only):
+
+### Aberration-correction pass (`fit_params_aberration`)
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `frame_min` / `frame_max` | −1 | Use all frames (−1 = no limit) |
+| `disparity_max` | 5.0 | Maximum parallax disparity search range (μm) |
+| `disparity_step` | 0.1 | Disparity search step size (μm) |
+| `dist_search` | 0.5 | Nearest-neighbour search radius (lens spacings) |
+| `angle_tolerance` | 2.0 | Angle tolerance for multi-view matching (degrees) |
+| `threshold` | 1.0 | Minimum fit quality threshold |
+| `min_views` | 3 | Minimum number of views required per molecule |
+| `z_calib` | None | Z calibration factor (None = not applied at this stage) |
+
+### Aberration map criteria (`aberration_params`)
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `axial_window` | 1.0 | Axial depth window for aberration estimation (μm) |
+| `photon_threshold` | 1 | Minimum photon count to include in aberration map |
+| `min_views` | 3 | Minimum views per molecule for aberration estimation |
+
+### Full-dataset pass (`fit_params_full`)
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `frame_min` / `frame_max` | −1 | Use all frames |
+| `disparity_max` | 8.0 | Maximum parallax disparity search range (μm) |
+| `disparity_step` | 0.1 | Disparity search step size (μm) |
+| `dist_search` | 0.5 | Nearest-neighbour search radius (lens spacings) |
+| `angle_tolerance` | 1.0 | Angle tolerance for multi-view matching (degrees) |
+| `threshold` | 0.3 | Minimum fit quality threshold (looser than aberration pass) |
+| `min_views` | 2 | Minimum number of views required per molecule |
+| `z_calib` | 1.534 | Z calibration factor (μm/μm, determined from bead measurements) |

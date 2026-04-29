@@ -8,9 +8,12 @@ Reconstruct the 3D refractive index (RI) distribution of a sample placed on a re
 
 ### Forward Model: rMSBP (Reflection Multi-Slice Beam Propagation)
 
-For each illumination angle, the light propagates through the sample, reflects off the substrate, and propagates back:
+For each illumination angle in a bright-field (BF) or dark-field (DF)
+illumination ring, the light propagates through the sample, reflects off
+the substrate, and propagates back:
 
-1. **Incident field**: Tilted plane wave at angle θ_m = 2πm/n_angles
+1. **Incident field**: Tilted plane wave with ring NA `NA_r` and angle
+   `θ_{r,m} = 2πm / n_angles^{(r)}`
 2. **Forward propagation** (downward through N layers):
    - For each layer i: propagate(dz_layer) → scatter(Δn_i) → propagate(dz_gap)
 3. **Reflection**: field *= -1 (π phase shift from perfect mirror)
@@ -18,9 +21,31 @@ For each illumination angle, the light propagates through the sample, reflects o
    - For each layer i: propagate(dz_gap) → propagate(dz_layer) → scatter(Δn_i)
 5. **Detection**: back-propagate to focal plane → apply pupil → intensity = |field|²
 
-### Why Three Steps per Layer (vs. Standard Two-Step BPM)
+### Illumination Strategy: BF + DF Rings
 
-In transmission-mode ODT the 3D volume is uniformly sliced into contiguous voxels, giving the standard two-step BPM: `propagate(dz) → scatter(Δn)` per slice.
+The measurement set is organised as illumination rings rather than a single
+NA/angle pair:
+
+- **BF (bright-field) rings** use `NA_illu < NA_obj`, so the direct beam is
+  present in the detected field. These measurements provide strong low- and
+  mid-spatial-frequency support.
+- **DF (dark-field) rings** use `NA_illu > NA_obj`, so the unscattered beam
+  falls outside the objective pupil and is rejected at detection. These
+  measurements emphasize scattered components and extend the accessible
+  frequency coverage.
+
+Current metadata uses four rings:
+
+- BF: `NA=0.130` with 8 angles
+- BF: `NA=0.251` with 16 angles
+- DF: `NA=0.420` with 16 angles
+- DF: `NA=0.560` with 16 angles
+
+for a total of 56 illumination angles.
+
+### Why Three Steps per Layer (vs. Standard split-step BPM)
+
+In transmission-mode ODT the 3D volume is uniformly sliced into contiguous voxels, giving the standard split-step BPM: `propagate(dz) → scatter(Δn)` per slice.
 
 In reflection-mode, the sample is modeled as **thin scattering layers separated by homogeneous gaps** on a mirror:
 
@@ -29,7 +54,7 @@ Layer 0 ──gap── Layer 1 ──gap── Layer 2 ──gap── Layer 3 
  0.5μm   10μm    0.5μm   10μm    0.5μm   10μm    0.5μm   10μm
 ```
 
-Each layer therefore requires three operations: (1) propagate through the layer thickness, (2) apply the scattering phase from the RI contrast, (3) propagate through the gap to the next layer. The gap (`dz_gap=10μm`) is 20× the layer thickness (`dz_layer=0.5μm`), reflecting thin etched structures on spacer layers. Setting `dz_gap=0` recovers the standard two-step BPM. In reflection geometry light traverses every gap twice (down and back up), so the gap propagation has a significant cumulative effect.
+Each layer therefore requires three operations: (1) propagate through the layer thickness, (2) apply the scattering phase from the RI contrast, (3) propagate through the gap to the next layer. The gap (`dz_gap=10μm`) is 20× the layer thickness (`dz_layer=0.5μm`), reflecting thin etched structures on spacer layers. Setting `dz_gap=0` recovers the standard split-step BPM. In reflection geometry light traverses every gap twice (down and back up), so the gap propagation has a significant cumulative effect.
 
 ### BPM Operators
 

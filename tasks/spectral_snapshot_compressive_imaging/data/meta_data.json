@@ -1,0 +1,24 @@
+{
+    "r": 256,
+    "c": 256,
+    "nC": 31,
+    "step": 1,
+    "wavelength_start_nm": 400,
+    "wavelength_end_nm": 700,
+    "wavelength_step_nm": 10,
+    "datasets": {
+        "kaist_crop256_01": {
+            "description": "KAIST color checker crop, 256x256, 31 spectral bands",
+            "file": "kaist_crop256_01.mat"
+        },
+        "icvl_crop256_10": {
+            "description": "ICVL dataset crop, 256x256, 31 spectral bands",
+            "file": "icvl_crop256_10.mat"
+        }
+    },
+    "masks": {
+        "256": "mask256.mat",
+        "512": "mask512.mat",
+        "1024": "mask1024.mat"
+    }
+}

@@ -1,10 +1,148 @@
 {
-  "rl": {
-    "nrmse": 3.6910061115367494,
-    "psnr": 0.8579016383545356
+  "reconstruction": {
+    "newSpacingPx": 15,
+    "depthStepUm": 10.0,
+    "thetaSamples": 128,
+    "kernelTol": 0.005,
+    "rlIterations": 10,
+    "nrmseDefinition": "sqrt(mean((x - x_ref)^2)) / (max(x_ref) - min(x_ref))"
   },
-  "ems": {
-    "nrmse": 3.1167053831148106,
-    "psnr": 2.326881902408706
+  "usaf": {
+    "targetDepthsUm": [
+      0.0,
+      -30.0,
+      -50.0,
+      -70.0
+    ],
+    "linePairsPerMM": 64.0,
+    "supportSizeUm": 80.0,
+    "fieldOfViewScale": 2.0,
+    "perpendicularShiftLensletPitch": 0.5,
+    "perpendicularShiftUm": null,
+    "profileMarginVox": 10,
+    "poissonScale": 1000.0,
+    "randomSeed": 0,
+    "interpretation": "Each benchmark case is a thickness-1 volume whose only occupied slice matches the sample depth."
+  },
+  "cases": [
+    {
+      "target_depth_um": 0.0,
+      "reconstruction_depths_um": [
+        0.0
+      ],
+      "conventional": {
+        "mse": 0.00025719465628244666,
+        "nrmse": 0.01603728955535961,
+        "ssim": 0.9571368926813549,
+        "psnr": 35.89738058963816
+      },
+      "rl": {
+        "mse": 0.005374371172449149,
+        "nrmse": 0.06051783402808885,
+        "ssim": 0.9094766020312122,
+        "psnr": 24.362332480948716
+      }
+    },
+    {
+      "target_depth_um": -30.0,
+      "reconstruction_depths_um": [
+        -30.0
+      ],
+      "conventional": {
+        "mse": 0.03646977635352242,
+        "nrmse": 0.1909706164663098,
+        "ssim": 0.784290114629552,
+        "psnr": 14.38066899936258
+      },
+      "rl": {
+        "mse": 0.005164951668572077,
+        "nrmse": 0.05998368399298781,
+        "ssim": 0.9031043302278208,
+        "psnr": 24.439337297473944
+      }
+    },
+    {
+      "target_depth_um": -50.0,
+      "reconstruction_depths_um": [
+        -50.0
+      ],
+      "conventional": {
+        "mse": 0.03813109252903351,
+        "nrmse": 0.1952718426425927,
+        "ssim": 0.7074537946157589,
+        "psnr": 14.187207511770733
+      },
+      "rl": {
+        "mse": 0.010217439909737175,
+        "nrmse": 0.07796767065718209,
+        "ssim": 0.8727972097140226,
+        "psnr": 22.161708809197783
+      }
+    },
+    {
+      "target_depth_um": -70.0,
+      "reconstruction_depths_um": [
+        -70.0
+      ],
+      "conventional": {
+        "mse": 0.03928632447884133,
+        "nrmse": 0.1982077810754192,
+        "ssim": 0.6193506814752283,
+        "psnr": 14.057586006925412
+      },
+      "rl": {
+        "mse": 0.009890237930290475,
+        "nrmse": 0.09555994281463713,
+        "ssim": 0.8663158464060932,
+        "psnr": 20.394482376286426
+      }
+    }
+  ],
+  "volume_demo": {
+    "target_depth_um": -50.0,
+    "reconstruction_depths_um": [
+      -100.0,
+      -75.0,
+      -50.0,
+      -25.0,
+      0.0
+    ],
+    "ground_truth_slice_energy": [
+      0.0,
+      0.0,
+      12880.0,
+      0.0,
+      0.0
+    ],
+    "reconstruction_slice_energy": [
+      709.7924294460271,
+      1747.1629641624406,
+      6181.276001656984,
+      2062.8585011040072,
+      1233.8438952697952
+    ],
+    "ground_truth_energy_share": [
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    "reconstruction_energy_share": [
+      0.05947183636186201,
+      0.14639067083777002,
+      0.517914561535912,
+      0.17284205653064416,
+      0.1033808747338118
+    ],
+    "target_slice_index": 2,
+    "reconstructed_peak_index": 2,
+    "reconstructed_peak_depth_um": -50.0,
+    "peak_depth_error_um": 0.0,
+    "target_slice_ncc": 0.8615633258976237,
+    "target_slice_nrmse": 0.15725356815907143,
+    "off_target_energy_fraction": 0.482085438464088,
+    "poissonScale": 1000.0,
+    "randomSeed": 1
   }
 }

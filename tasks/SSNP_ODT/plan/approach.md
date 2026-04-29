@@ -13,8 +13,8 @@ The SSNP model describes light propagation through an inhomogeneous medium by tr
 
 The forward model for each illumination angle:
 - Initialize tilted plane wave with direction (kx, ky) at NA = 0.65
-- Propagate through all 308 slices: alternating P·Q
-- Back-propagate to focal plane, apply pupil, extract forward component
+- Propagate through all 308 slices: alternating P·Q, i.e. scattering by Q followed by propagation by P.
+- propagate to focal plane, apply pupil, extract forward component
 - Compute intensity: I = |φ_out|²
 
 The inverse problem minimizes:

@@ -1,0 +1,15 @@
+{
+  "baseline": [
+    {
+      "method": "Gauss-Newton sinogram decomposition + FBP",
+      "tissue_ncc_vs_ref": 0.998,
+      "tissue_nrmse_vs_ref": 0.062,
+      "bone_ncc_vs_ref": 0.9886,
+      "bone_nrmse_vs_ref": 0.0404,
+      "ncc_vs_ref": 0.9933,
+      "nrmse_vs_ref": 0.0512
+    }
+  ],
+  "ncc_boundary": 0.894,
+  "nrmse_boundary": 0.0563
+}

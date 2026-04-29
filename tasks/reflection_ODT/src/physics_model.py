@@ -35,6 +35,11 @@ Physical model (Beam Propagation Method in reflection geometry):
         In real space: u *= exp(i · Δn · phase_factor · dz)
         where phase_factor = 2π·res_z / n0
 
+    Illumination rings:
+        BF (bright-field): NA_illu < NA_obj → direct beam passes pupil
+        DF (dark-field):   NA_illu > NA_obj → direct beam blocked by pupil,
+                           only scattered light within pupil is detected
+
     This is the paraxial BPM (single complex field), simpler than the
     non-paraxial SSNP (state vector with z-derivative).
 
@@ -42,7 +47,7 @@ Reference: Zhu et al., "rMS-FPT", arXiv:2503.12246 (2025)
 Implementation uses PyTorch for GPU acceleration and autograd support.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 import torch
 
@@ -62,14 +67,17 @@ class ReflectionBPMConfig:
         Background refractive index.
     NA_obj : float
         Objective numerical aperture.
-    NA_illu : float
-        Illumination numerical aperture.
     wavelength_um : float
         Illumination wavelength in micrometers.
     res_um : tuple of float
         Voxel size in micrometers (dx, dy, dz).
+    illumination_rings : list of dict
+        Each entry: {"NA": float, "n_angles": int, "type": "BF" or "DF"}.
+        BF rings have NA < NA_obj (direct beam passes pupil).
+        DF rings have NA > NA_obj (direct beam blocked; only scattered light
+        within the pupil is detected).
     n_angles : int
-        Number of illumination angles.
+        Total number of illumination angles (sum over all rings).
     dz_layer : float
         BPM propagation distance for each layer scatter step (z-pixel units).
     dz_gap : float
@@ -79,9 +87,9 @@ class ReflectionBPMConfig:
     res: tuple
     n0: float
     NA_obj: float
-    NA_illu: float
     wavelength_um: float
     res_um: tuple
+    illumination_rings: list
     n_angles: int
     dz_layer: float
     dz_gap: float
@@ -98,15 +106,17 @@ class ReflectionBPMConfig:
         wavelength = metadata["wavelength_um"]
         res_um = tuple(metadata["res_um"])
         res = tuple(r * n0 / wavelength for r in res_um)
+        rings = metadata["illumination_rings"]
+        n_angles = sum(r["n_angles"] for r in rings)
         return cls(
             volume_shape=tuple(metadata["volume_shape"]),
             res=res,
             n0=n0,
             NA_obj=metadata["NA_obj"],
-            NA_illu=metadata.get("NA_illu", metadata["NA_obj"]),
             wavelength_um=wavelength,
             res_um=res_um,
-            n_angles=metadata["n_angles"],
+            illumination_rings=rings,
+            n_angles=n_angles,
             dz_layer=metadata.get("dz_layer", 0.5),
             dz_gap=metadata.get("dz_gap", 10.0),
         )
@@ -115,7 +125,7 @@ class ReflectionBPMConfig:
 class ReflectionBPMForwardModel:
     """
     Reflection-mode BPM forward model for multi-slice Fourier
-    ptychographic tomography.
+    ptychographic tomography with BF and DF illumination rings.
 
     Parameters
     ----------
@@ -187,13 +197,14 @@ class ReflectionBPMForwardModel:
         """
         Binary pupil function with smooth cutoff at NA_obj.
 
-        Uses a sigmoid-like function centred at c_gamma = sqrt(1 - NA_obj²).
-        Note: NA_obj is used directly (not NA_obj/n0) because the frequency
-        grid is normalised by res = dx·n0/λ, so the n0 factor cancels.
+        Uses a sigmoid-like function centred at c_gamma = sqrt(1 - (NA_obj/n0)²).
+        The frequency grid gives FX = sin(θ), and the pupil cutoff is at
+        sin(θ_max) = NA_obj/n0, so the cutoff is sqrt(1 - (NA_obj/n0)²).
 
         Returns shape (Ny, Nx) complex128 tensor.
         """
-        cutoff = np.sqrt(1.0 - self.config.NA_obj**2)
+        na_norm = self.config.NA_obj / self.config.n0
+        cutoff = np.sqrt(1.0 - na_norm**2)
         mask = torch.exp(torch.clamp(self.c_gamma - cutoff, max=0.01) * 10000.0)
         mask = mask / (1.0 + mask)
         return mask.to(dtype=self.dtype, device=self.device)
@@ -202,33 +213,37 @@ class ReflectionBPMForwardModel:
     # Incident field
     # ──────────────────────────────────────────────────────────────────────
 
-    def _make_incident_field(self, angle_idx: int) -> torch.Tensor:
+    def _make_incident_field(self, na: float, angle_idx: int,
+                             n_angles_in_ring: int) -> torch.Tensor:
         """
-        Construct a tilted plane wave for the given illumination angle.
+        Construct a tilted plane wave for the given illumination ring and angle.
 
         The illumination direction is:
-            kx_in = NA_illu · cos(2π·m/n_angles)
-            ky_in = NA_illu · sin(2π·m/n_angles)
+            kx_in = (NA/n0) · cos(2π·m/n_angles_in_ring)
+            ky_in = (NA/n0) · sin(2π·m/n_angles_in_ring)
 
         The tilt is truncated to the nearest integer frequency for
         periodicity (matching the original code's ``trunc=True``).
 
         Parameters
         ----------
+        na : float
+            Illumination numerical aperture of this ring.
         angle_idx : int
-            Index m of the illumination angle (0 to n_angles-1).
+            Index m within this ring (0 to n_angles_in_ring-1).
+        n_angles_in_ring : int
+            Total number of angles in this ring.
 
         Returns
         -------
         u : (Ny, Nx) complex128 tensor — tilted plane wave
         """
-        na = self.config.NA_illu
-        n_angles = self.config.n_angles
+        na_norm = na / self.config.n0
         res = self.config.res
 
-        theta = 2.0 * np.pi * angle_idx / n_angles
-        c_a = na * np.cos(theta)  # direction cosine along x
-        c_b = na * np.sin(theta)  # direction cosine along y
+        theta = 2.0 * np.pi * angle_idx / n_angles_in_ring
+        c_a = na_norm * np.cos(theta)  # direction cosine along x
+        c_b = na_norm * np.sin(theta)  # direction cosine along y
 
         # Truncate to nearest integer frequency for periodicity
         norm_x = self.nx * res[0]
@@ -304,24 +319,26 @@ class ReflectionBPMForwardModel:
     # Full forward model
     # ──────────────────────────────────────────────────────────────────────
 
-    def forward_single(self, dn_volume: torch.Tensor,
-                       angle_idx: int) -> torch.Tensor:
+    def forward_single_ring(self, dn_volume: torch.Tensor, na: float,
+                            angle_idx: int, n_angles_in_ring: int) -> torch.Tensor:
         """
-        Simulate intensity image for a single illumination angle.
+        Simulate intensity image for one angle of one illumination ring.
 
         Pipeline:
-            1. Construct incident tilted plane wave
+            1. Construct incident tilted plane wave (at given NA)
             2. BPM forward through N layers (propagate + scatter + gap)
             3. Reflect off mirror
             4. BPM backward through N layers in reverse
             5. Back-propagate to focal plane
-            6. Apply pupil filter
+            6. Apply pupil filter (blocks DF direct beam for NA > NA_obj)
             7. Take intensity |u|²
 
         Parameters
         ----------
-        dn_volume : (Nz, Ny, Nx) real tensor — RI contrast volume
-        angle_idx : int — illumination angle index
+        dn_volume        : (Nz, Ny, Nx) real tensor — RI contrast volume
+        na               : float — illumination NA of this ring
+        angle_idx        : int — angle index within this ring
+        n_angles_in_ring : int — total angles in this ring
 
         Returns
         -------
@@ -330,7 +347,7 @@ class ReflectionBPMForwardModel:
         dz_layer = self.config.dz_layer
         dz_gap = self.config.dz_gap
 
-        u = self._make_incident_field(angle_idx)
+        u = self._make_incident_field(na, angle_idx, n_angles_in_ring)
 
         # Forward propagation (downward through sample)
         for iz in range(self.nz):
@@ -352,6 +369,8 @@ class ReflectionBPMForwardModel:
         u = self._bpm_propagate(u, -total_depth)
 
         # Apply pupil in Fourier domain
+        # For DF illumination (NA > NA_obj), the unscattered direct beam
+        # is outside the pupil and is blocked here.
         a = torch.fft.fft2(u)
         a = a * self.pupil
         u = torch.fft.ifft2(a)
@@ -360,27 +379,29 @@ class ReflectionBPMForwardModel:
         intensity = torch.abs(u) ** 2
         return intensity
 
-    def forward(self, dn_volume: torch.Tensor,
-                n_angles: int = None) -> torch.Tensor:
+    def forward(self, dn_volume: torch.Tensor) -> torch.Tensor:
         """
-        Simulate intensity images for all illumination angles.
+        Simulate intensity images for all illumination rings and angles.
+
+        Iterates over each ring in config.illumination_rings, and over each
+        angle within the ring.  The output is stacked in ring order: all
+        angles of ring 0, then ring 1, etc.
 
         Parameters
         ----------
         dn_volume : (Nz, Ny, Nx) real tensor — RI contrast volume
-        n_angles  : int or None — number of angles (defaults to config)
 
         Returns
         -------
-        intensities : (n_angles, Ny, Nx) real tensor
+        intensities : (n_angles_total, Ny, Nx) real tensor
         """
-        if n_angles is None:
-            n_angles = self.config.n_angles
-
         intensities = []
-        for m in range(n_angles):
-            I_m = self.forward_single(dn_volume, m)
-            intensities.append(I_m)
+        for ring in self.config.illumination_rings:
+            na = ring["NA"]
+            n_ang = ring["n_angles"]
+            for m in range(n_ang):
+                I_m = self.forward_single_ring(dn_volume, na, m, n_ang)
+                intensities.append(I_m)
 
         return torch.stack(intensities, dim=0)
 
@@ -394,13 +415,18 @@ class ReflectionBPMForwardModel:
 
     def __repr__(self):
         c = self.config
+        bf_rings = [r for r in c.illumination_rings if r["type"] == "BF"]
+        df_rings = [r for r in c.illumination_rings if r["type"] == "DF"]
+        bf_nas = ", ".join(f"{r['NA']:.3f}({r['n_angles']})" for r in bf_rings)
+        df_nas = ", ".join(f"{r['NA']:.3f}({r['n_angles']})" for r in df_rings)
         return (
             f"ReflectionBPMForwardModel("
             f"volume={c.volume_shape}, "
             f"NA_obj={c.NA_obj}, "
-            f"NA_illu={c.NA_illu}, "
+            f"BF=[{bf_nas}], "
+            f"DF=[{df_nas}], "
+            f"n_angles={c.n_angles}, "
             f"n0={c.n0}, "
             f"λ={c.wavelength_um}μm, "
-            f"angles={c.n_angles}, "
             f"device={self.device})"
         )

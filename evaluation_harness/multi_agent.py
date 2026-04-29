@@ -77,7 +77,10 @@ class MultiAgentPipeline:
     # Public interface
     # ------------------------------------------------------------------
     def run(self, task_desc: str, data_spec: str = "",
-            requirements: str = "") -> AgentResult:
+            requirements: str = "",
+            level: str = "L1",
+            given_approach: Optional[str] = None,
+            given_design: Optional[str] = None) -> AgentResult:
         """Execute the full multi-agent pipeline.
 
         Parameters
@@ -88,6 +91,13 @@ class MultiAgentPipeline:
             meta_data content describing data format.
         requirements : str
             requirements.txt content listing available packages.
+        level : str
+            Difficulty level — "L1" (task desc only), "L2" (+approach),
+            "L3" (+approach+design).
+        given_approach : str or None
+            Pre-supplied approach.md content (for L2/L3).
+        given_design : str or None
+            Pre-supplied design.md content (for L3).
 
         Returns
         -------
@@ -97,12 +107,31 @@ class MultiAgentPipeline:
         result = AgentResult()
         t0 = time.time()
 
-        # Store requirements for use in agent prompts
+        # Store requirements and level for use in agent prompts
         self.requirements = requirements
+        self.level = level
+
+        # For L2/L3: pre-seed the plan from the given approach/design
+        if given_approach and level in ("L2", "L3"):
+            self.current_plan = given_approach
+            self.runner.write_file("plan/approach.md", given_approach)
+            result.files_written.append("plan/approach.md")
+            log.info("[Level %s] Using pre-supplied approach.md", level)
+
+        if given_design and level == "L3":
+            self.current_skeleton = given_design
+            # Parse file blocks from the given design
+            files = self._parse_file_blocks(given_design)
+            if files:
+                self.current_files = files
+                log.info("[Level L3] Parsed %d file skeletons from given design", len(files))
+            self.runner.write_file("plan/design.md", given_design)
+            result.files_written.append("plan/design.md")
+            log.info("[Level L3] Using pre-supplied design.md")
 
         # Phase 0: Explore data directory
         self._explore_data(result)
-        self._log_to_file("# Multi-Agent Pipeline Log\n")
+        self._log_to_file(f"# Multi-Agent Pipeline Log (Level: {level})\n")
 
         try:
             self._run_pipeline_loop(task_desc, data_spec, result)
@@ -120,7 +149,20 @@ class MultiAgentPipeline:
                            result: AgentResult) -> None:
         """Inner loop — separated so that run() can catch exceptions."""
         feedback = None
-        ticket = "Planner"
+
+        # Determine starting ticket based on level
+        level = getattr(self, "level", "L1")
+        if level == "L3":
+            # L3: approach + design both given → start at Coder
+            ticket = "Coder"
+            log.info("[Level L3] Skipping Planner and Architect — starting at Coder")
+        elif level == "L2":
+            # L2: approach given → start at Architect (to produce design)
+            ticket = "Architect"
+            log.info("[Level L2] Skipping Planner — starting at Architect")
+        else:
+            # L1: start from scratch
+            ticket = "Planner"
 
         for iteration in range(1, self.max_iterations + 1):
             log.info("═" * 20 + f" Iteration {iteration} (Ticket: {ticket}) " + "═" * 20)
@@ -554,7 +596,30 @@ class MultiAgentPipeline:
                             )
 
                 ticket = judgment.get("ticket_assigned_to", "Coder")
-                
+
+                # ── Level-aware routing constraints ──
+                # L3: approach + design are fixed — never route to Planner or Architect
+                # L2: approach is fixed — never route to Planner
+                level = getattr(self, "level", "L1")
+                if level == "L3" and ticket in ("Planner", "Architect"):
+                    log.info("Level L3: overriding ticket %s → Coder (approach+design are fixed)", ticket)
+                    ticket = "Coder"
+                    judgment["ticket_assigned_to"] = "Coder"
+                    judgment["feedback"] = (
+                        (judgment.get("feedback", "") or "") +
+                        "\nNOTE: The approach and design are FIXED (Level 3 evaluation). "
+                        "You must fix the implementation within the given design."
+                    )
+                elif level == "L2" and ticket == "Planner":
+                    log.info("Level L2: overriding ticket Planner → Architect (approach is fixed)", ticket)
+                    ticket = "Architect"
+                    judgment["ticket_assigned_to"] = "Architect"
+                    judgment["feedback"] = (
+                        (judgment.get("feedback", "") or "") +
+                        "\nNOTE: The approach is FIXED (Level 2 evaluation). "
+                        "Redesign the code architecture within the given approach."
+                    )
+
                 # Safety override: prevent routing runtime errors to Architect
                 # Architect rewrites ALL files from scratch, which is very expensive.
                 # KeyError, TypeError, ValueError, IndexError etc. are code-body bugs

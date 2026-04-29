@@ -1,7 +1,21 @@
 {
-  "nrmse": 0.16519876720604074,
-  "ncc": 0.3670748102918898,
-  "dynamic_range": 11.933422550599435,
-  "calibration": 0.173828125,
-  "mean_uncertainty": 0.0008541748393326998
+  "nrmse": 0.1345,
+  "ncc": 0.6565,
+  "dynamic_range": 13.677,
+  "flux_relative_error": 0.0004,
+  "silhouette_score": 0.7229,
+  "n_modes": 2,
+  "mode_fraction_min": 0.2646,
+  "mode1_nrmse": 0.1183,
+  "mode1_ncc": 0.6056,
+  "mode2_nrmse": 0.1611,
+  "mode2_ncc": 0.4953,
+  "cphase_rmse_deg": 40.15,
+  "logcamp_rmse": 0.6959,
+  "mode1_cphase_rmse_deg": 26.55,
+  "mode1_logcamp_rmse": 0.4250,
+  "mode2_cphase_rmse_deg": 30.36,
+  "mode2_logcamp_rmse": 0.4265,
+  "mean_uncertainty": 0.001073,
+  "calibration": 0.1758
 }

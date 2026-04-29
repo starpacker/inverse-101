@@ -61,16 +61,18 @@ class SSNPConfig:
     def from_metadata(cls, metadata: dict) -> "SSNPConfig":
         """Construct SSNPConfig from a metadata dictionary.
 
-        Note: ``res`` is stored in physical units (μm), matching the
-        convention of the original SSNP-IDT codebase where
-        ``ssnp.config.res = res_um``.  All internal formulas (kz,
-        c_gamma, phase_factor) are self-consistent under this convention.
+        The official ``ssnp`` codebase parameterises propagation using the
+        dimensionless sampling
+
+            res = xyz / lambda0 * n0
+
+        where ``xyz`` is the physical voxel size.  If metadata stores voxel
+        size in micrometres, it must therefore be converted before use.
         """
         n0 = metadata["n0"]
         wavelength = metadata["wavelength_um"]
         res_um = tuple(metadata["res_um"])
-        # Use physical pixel size directly (original SSNP convention)
-        res = res_um
+        res = tuple(size * n0 / wavelength for size in res_um)
         return cls(
             volume_shape=tuple(metadata["volume_shape"]),
             res=res,
@@ -202,7 +204,7 @@ class SSNPForwardModel:
         u  : (Ny, Nx) complex128 tensor — tilted plane wave
         ud : (Ny, Nx) complex128 tensor — z-derivative of the field
         """
-        na = self.config.NA
+        na = self.config.NA / self.config.n0
         n_angles = self.config.n_angles
         res = self.config.res
 

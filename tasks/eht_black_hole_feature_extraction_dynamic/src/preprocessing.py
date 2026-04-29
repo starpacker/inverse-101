@@ -32,7 +32,7 @@ def load_metadata(data_dir: str = "data") -> dict:
     -------
     dict with all metadata fields.
     """
-    path = os.path.join(data_dir, "meta_data")
+    path = os.path.join(data_dir, "meta_data.json")
     with open(path, "r") as f:
         return json.load(f)
 

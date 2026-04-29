@@ -1,0 +1,23 @@
+{
+  "Nx": 201,
+  "Nz": 2,
+  "pxsizex_nm": 40,
+  "detector_N": 5,
+  "signal_level": 300,
+  "na": 1.4,
+  "wl_ex_nm": 640,
+  "wl_em_nm": 660,
+  "gamma_deg": 45,
+  "beta_deg": 90,
+  "refractive_index": 1.5,
+  "mask_sampling": 50,
+  "optimal_bkg_plane_nm": 720.0,
+  "n_filament": 10,
+  "radius_filament_nm": 80,
+  "intensity_filament_range": [
+    0.6,
+    1.0
+  ],
+  "noise_model": "poisson",
+  "random_seed": 42
+}

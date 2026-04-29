@@ -1,12 +1,8 @@
 # EHT Black Hole Probabilistic Imaging (DPI)
 
-> Learn the posterior distribution over radio images of a supermassive black
-> hole from sparse interferometric measurements, enabling principled
-> uncertainty quantification via a normalizing flow generative model.
+> Learn the posterior distribution over radio images of a supermassive black hole from sparse interferometric measurements, enabling principled uncertainty quantification via a normalizing flow generative model.
 
-**Domain:** Astronomy
-**Modality:** Radio interferometry (VLBI)
-**Difficulty:** Hard
+> Domain: Astronomy | Keywords: radio interferometry, variational inference | Difficulty: Hard
 
 ---
 
@@ -28,7 +24,7 @@ Gaussian vectors through the learned flow, enabling:
 
 ---
 
-## Physical Model
+## Problem Description
 
 The forward model maps images to interferometric observables:
 
@@ -43,36 +39,55 @@ Because station-based gain errors corrupt raw visibilities, DPI uses
 - **Log closure amplitude** (quadrangle of 4 stations):
   $$\ln A_{ijkl} = \ln|V_{ij}| + \ln|V_{kl}| - \ln|V_{ik}| - \ln|V_{jl}|$$
 
-The DPI training loss minimizes the KL divergence from the posterior:
+The inverse problem is to recover the full posterior distribution $p(\mathbf{x} \mid y)$ over images consistent with these closure measurements — a multi-modal distribution that point-estimate methods cannot characterize.
 
-$$\theta^* = \arg\min_\theta \, \mathbb{E}_{z \sim \mathcal{N}(0,I)} \left[ \mathcal{L}_\text{data}(y, f(G_\theta(z))) + \lambda \mathcal{R}(G_\theta(z)) - \beta \log|\det \frac{\partial G_\theta}{\partial z}| \right]$$
-
-| Symbol | Description |
-|--------|-------------|
-| G_θ    | Real-NVP normalizing flow (latent z → image x) |
-| L_data | Chi-squared on closure phases + log closure amplitudes |
-| R(x)   | Image priors (MEM, TSV, L1, flux, centering) |
-| β log det | Entropy term — prevents posterior collapse |
+**Input:** 465 closure phases and 485 log closure amplitudes from a real SgrA* observation.
+**Output:** a generative model that produces posterior image samples.
 
 ---
 
 ## Data Description
 
-### `data/obs.uvfits`
+### `data/raw_data.npz`
 
-SgrA* 2015 ALMA VLBI observation in UVFITS format, containing 938
-visibilities at 230 GHz. Loaded via ehtim.
+Pre-processed observation arrays from a real SgrA* 2015 ALMA VLBI observation:
 
-### `data/gt.fits`
+| Key | Shape | Dtype | Description |
+|-----|-------|-------|-------------|
+| `vis` | (938,) | complex128 | Complex visibilities |
+| `sigma` | (938,) | float64 | Per-visibility thermal noise sigma (Jy) |
+| `uv_coords` | (938, 2) | float64 | Baseline (u, v) coordinates in wavelengths |
+| `times` | (938,) | float64 | Observation times |
+| `t1`, `t2` | (938,) | bytes | Station names for each baseline |
+| `station_ids` | (938, 2) | int64 | Integer station pair indices |
+| `cp_times` | (465,) | float64 | Closure phase timestamps |
+| `cp_t1`, `cp_t2`, `cp_t3` | (465,) | bytes | Closure triangle station names |
+| `cp_values_deg` | (465,) | float64 | Observed closure phases (degrees) |
+| `cp_sigmas_deg` | (465,) | float64 | Closure phase sigmas (degrees) |
+| `lca_times` | (485,) | float64 | Log closure amplitude timestamps |
+| `lca_t1`, `lca_t2`, `lca_t3`, `lca_t4` | (485,) | bytes | Closure quad station names |
+| `lca_values` | (485,) | float64 | Observed log closure amplitudes |
+| `lca_sigmas` | (485,) | float64 | Log closure amplitude sigmas |
 
-128×128 reference ground-truth image in FITS format. Regridded to 32×32
-at the task field of view (160 μas).
+> **Note**: `raw_data.npz` was created from the original `obs.uvfits` file using
+> `ehtim >= 1.2` and `astropy >= 4.0`. Those packages are NOT required at runtime;
+> they are only needed if you want to re-generate `raw_data.npz` from the original
+> FITS/UVFITS files (see `src/generate_data.py`).
 
-### `data/meta_data`
+### `data/ground_truth.npz`
+
+| Key | Shape | Dtype | Description |
+|-----|-------|-------|-------------|
+| `image` | (32, 32) | float64 | Ground-truth image regridded to 32×32, 160 μas FOV |
+
+> Regridded from the original 128×128 FITS reference image using ehtim.
+
+### `data/meta_data.json`
 
 JSON file with imaging and training parameters:
 - `npix` = 32: image size (32×32 pixels)
 - `fov_uas` = 160.0: field of view in microarcseconds
+- `prior_fwhm_uas` = 50.0: Gaussian prior FWHM in microarcseconds
 - `n_flow` = 16: number of Real-NVP flow blocks
 - `n_epoch` = 10000: training epochs
 - `batch_size` = 32: mini-batch size
@@ -83,28 +98,17 @@ JSON file with imaging and training parameters:
 
 ---
 
-## Method Hint
+## Method Hints
 
-**Deep Probabilistic Imaging** uses a Real-NVP normalizing flow:
+**Normalizing flows for posterior estimation.** A normalizing flow $G_\theta: z \mapsto x$ transforms a simple Gaussian prior on latent code $z$ into a complex image distribution. Training minimizes the KL divergence from the true posterior:
 
-1. **Architecture**: Stack of flow blocks, each containing ActNorm +
-   AffineCoupling (with 2-layer networks: LeakyReLU, BatchNorm1d, ZeroFC).
-   Random permutations between blocks.
+$$\theta^* = \arg\min_\theta \, \mathbb{E}_{z \sim \mathcal{N}(0,I)} \left[ \mathcal{L}_\text{data}(y, G_\theta(z)) + \lambda \mathcal{R}(G_\theta(z)) - \beta \log\left|\det \frac{\partial G_\theta}{\partial z}\right| \right]$$
 
-2. **Training**: Sample z ~ N(0,I), push through flow to get images.
-   Minimize data fidelity (closure chi-squared) + priors - entropy (log-det).
-   Adam optimizer with gradient clipping.
+where $\mathcal{L}_\text{data}$ is a chi-squared loss on closure quantities, $\mathcal{R}(x)$ combines image regularizers (maximum entropy, total squared variation, flux and centroid constraints), and the log-determinant term is an entropy bonus that prevents posterior collapse.
 
-3. **Positivity**: Softplus activation + learnable scale factor ensures
-   non-negative images. Log-determinant correction accounts for the transform.
+**Why flows suit this problem.** After training, posterior samples are obtained in a single forward pass through $G_\theta$, making uncertainty quantification orders of magnitude faster than MCMC. The architecture should be a Real-NVP-style coupling flow mapping $\mathbb{R}^{N^2} \to \mathbb{R}^{N^2}$, with a positivity-enforcing output activation.
 
-4. **Posterior sampling**: After training, sample z's and push through
-   the flow to get posterior image samples. Compute mean, std, etc.
-
-Key hyperparameters:
-- 16 flow blocks, seqfrac=4 (hidden dimension = npix²/8)
-- Closure-only data fidelity (no raw visibility loss)
-- MEM + TSV + L1 + flux + centering priors
+**Closure-only data fidelity.** Using only closure phases and log closure amplitudes (rather than raw visibilities) makes training robust to station-based gain errors that dominate EHT calibration uncertainty.
 
 ---
 

@@ -1,9 +1,280 @@
 # imaging-101: Scientific Imaging Benchmark
 
-A benchmark suite for evaluating **coding agents** on **computational and scientific imaging** tasks.
-It covers 8 domains (physics, chemistry, biology, medicine, astronomy, earth science, mechanics, industrial/commercial)
-with standardized task structure, reference implementations, and automated evaluation via an integrated
-**ReAct / Multi-Agent evaluation harness**.
+A benchmark suite for evaluating **coding agents** on **computational and scientific imaging** inverse problems.
+Covers **57 tasks** across **6 domains** with standardized task structure, reference implementations, and automated evaluation.
+
+> **Docs:** [Evaluation Guide](docs/EVALUATION_GUIDE.md) | [New Task Guide](docs/NEW_TASK_GUIDE.md) | [Release Checklist](docs/RELEASE_CHECKLIST.md)
+
+---
+
+## Quick Start: Evaluate a Task in 3 Minutes
+
+```bash
+# 1. Clone and install (only `requests` is required)
+git clone https://github.com/HeSunPU/imaging-101.git
+cd imaging-101
+pip install -r evaluation_harness/requirements.txt
+
+# 2. Set your LLM API credentials
+export API_KEY="your-api-key"
+export BASE_URL="https://api.openai.com/v1"   # or any OpenAI-compatible endpoint
+export MODEL="gpt-4o"                          # your model name
+
+# 3. Run function-mode evaluation on one task
+python -m evaluation_harness run \
+    --task ct_sparse_view \
+    --mode function \
+    --target-function physics_model \
+    --model $MODEL \
+    --base-url $BASE_URL \
+    --api-key $API_KEY \
+    --framework react \
+    --output results/function_mode \
+    -v
+```
+
+That's it — the agent will read the task, write code, run pytest, and iterate until tests pass. Results are saved to `results/function_mode/ct_sparse_view/`.
+
+**Want to run end-to-end instead?** The agent builds the full pipeline from scratch:
+
+```bash
+python -m evaluation_harness run \
+    --task ct_sparse_view \
+    --mode end_to_end \
+    --level L1 \
+    --model $MODEL \
+    --base-url $BASE_URL \
+    --api-key $API_KEY \
+    --framework react \
+    --output results/end_to_end \
+    -v
+```
+
+**Using a third-party agent (Claude Code, Cursor, etc.)?**
+
+```bash
+# Prepare a sandbox workspace with the task prompt
+python -m evaluation_harness prepare --task ct_sparse_view --level L1
+# → Run your agent in the workspace, let it produce output/reconstruction.npy
+# Score the result
+python -m evaluation_harness collect \
+    --task ct_sparse_view \
+    --workspace-dir workspaces/ct_sparse_view_L1/ \
+    --agent-name claude_code
+```
+
+---
+
+## Add Your Own Task and Evaluate It
+
+You can add any computational imaging task to the benchmark. Here's the minimal workflow:
+
+```bash
+# 1. Create the standard directory structure
+mkdir -p tasks/my_task/{data,plan,src,evaluation/{tests,fixtures,reference_outputs},notebooks}
+
+# 2. Add your files following the template:
+#    - README.md          → problem description (physics, data format, method hints)
+#    - data/raw_data.npz  → observation data
+#    - data/meta_data.json → imaging parameters
+#    - src/physics_model.py, src/preprocessing.py, src/solvers.py → reference implementation
+#    - main.py            → pipeline entry point
+#    - evaluation/tests/test_*.py → unit tests with fixtures
+
+# 3. Verify everything works
+cd tasks/my_task
+python main.py                          # pipeline runs end-to-end
+python -m pytest evaluation/tests/ -v   # all unit tests pass
+
+# 4. Evaluate an agent on your new task
+cd ../..
+python -m evaluation_harness run \
+    --task my_task \
+    --mode function \
+    --target-function physics_model \
+    --model $MODEL --base-url $BASE_URL --api-key $API_KEY \
+    --framework react --output results/function_mode -v
+```
+
+See the full [New Task Guide](docs/NEW_TASK_GUIDE.md) for detailed instructions on each file, test fixtures, plan documents, and common pitfalls.
+
+---
+
+## Tasks
+
+Status: ✅ Completed & verified — 🔍 Completed, pending further verification — ⚠️ Known issues
+
+### Astronomy (9 tasks)
+
+| Task | Keywords | Difficulty | Status |
+|------|----------|------------|--------|
+| [EHT Black Hole (static)](tasks/eht_black_hole_original/) | radio interferometry, compressed sensing | Hard | ✅ |
+| [EHT Black Hole (dynamic)](tasks/eht_black_hole_dynamic/) | radio interferometry, dynamic imaging | Hard | ✅ |
+| [EHT Black Hole UQ](tasks/eht_black_hole_UQ/) | radio interferometry, variational inference | Hard | ✅ |
+| [EHT Black Hole Feature Extraction](tasks/eht_black_hole_feature_extraction_dynamic/) | radio interferometry, variational inference, feature extraction, dynamic imaging | Hard | 🔍 |
+| [EHT Black Hole Tomography (NeRF)](tasks/eht_black_hole_tomography/) | radio interferometry, tomography, neural rendering | Hard | 🔍 |
+| [Lucky Imaging](tasks/lucky_imaging/) | imaging through turbulence, lucky imaging, image sharpening | Medium | 🔍 |
+| [Exoplanet Direct Imaging](tasks/exoplanet_imaging/) | high-contrast imaging, PSF subtraction | Medium | 🔍 |
+| [Shack-Hartmann Wavefront Sensing](tasks/shack-hartmann/) | adaptive optics, wavefront sensing | Medium | 🔍 |
+| [Shapelet Source Reconstruction](tasks/shapelet_source_reconstruction/) | gravitational lensing, shapelet decomposition, image deconvolution | Medium | 🔍 |
+
+### Biology (9 tasks)
+
+| Task | Keywords | Difficulty | Status |
+|------|----------|------------|--------|
+| [SSNP-ODT](tasks/SSNP_ODT/) | tomography, wave imaging, inverse scattering | Hard | ✅ |
+| [Reflection-ODT](tasks/reflection_ODT/) | tomography, wave imaging, phase retrieval | Hard | ✅ |
+| [Fourier Ptychography](tasks/fourier_ptychography/) | phase retrieval, ptychography, super-resolution | Medium | ✅ |
+| [Microscope Denoising (ZS-DeconvNet)](tasks/microscope_denoising/) | denoising, deconvolution, self-supervised learning | Medium | 🔍 |
+| [Hessian SIM](tasks/hessian_sim/) | structured illumination microscopy, super-resolution, regularized reconstruction | Medium | 🔍 |
+| [Light Field Microscope](tasks/light_field_microscope/) | wave imaging, light field imaging, deconvolution | Hard | 🔍 |
+| [Single-Molecule Light Field (FLFM)](tasks/single_molecule_light_field/) | super-resolution, localization microscopy, light field imaging | Medium | 🔍 |
+| [FPM INR Reconstruction](tasks/fpm_inr_reconstruction/) | computational microscopy, phase retrieval, implicit neural representation | Medium | 🔍 |
+| [Scalable Structured Image Scanning Microscopy](tasks/s2ism/) | fluorescence microscopy, image scanning microscopy, deconvolution | Medium | 🔍 |
+
+### Physics (6 tasks)
+
+| Task | Keywords | Difficulty | Status |
+|------|----------|------------|--------|
+| [Conventional Ptychography](tasks/conventional_ptychography/) | phase retrieval, ptychography | Medium | ✅ |
+| [Spectral Snapshot Compressive Imaging (PnP-CASSI)](tasks/spectral_snapshot_compressive_imaging/) | compressed sensing, hyperspectral imaging | Medium | 🔍 |
+| [Electron Ptychography](tasks/electron_ptychography/) | electron microscopy, phase retrieval, ptychography | Medium | 🔍 |
+| [Confocal NLOS — f-k Migration](tasks/confocal-nlos-fk/) | non-line-of-sight, wave imaging | Medium | 🔍 |
+| [Lensless Imaging (DiffuserCam)](tasks/lensless_imaging/) | lensless imaging, deconvolution | Medium | 🔍 |
+| [Differentiable Deflectometry](tasks/differentiable_deflectometry/) | deflectometry, differentiable rendering, optical metrology | Hard | 🔍 |
+
+### Chemistry & Material Science (5 tasks)
+
+| Task | Keywords | Difficulty | Status |
+|------|----------|------------|--------|
+| [MCR Hyperspectral Unmixing](tasks/mcr_hyperspectral/) | hyperspectral imaging, spectral unmixing | Medium | 🔍 |
+| [Raman Cell Phenotyping](tasks/raman_cell_phenotyping/) | Raman spectroscopy, hyperspectral unmixing | Medium | 🔍 |
+| [CARS Spectroscopy Temperature Inversion](tasks/cars_spectroscopy/) | Raman spectroscopy, hyperspectral unmixing | Medium | 🔍 |
+| [X-ray Ptychography](tasks/xray_ptychography_tike/) | wave imaging, phase retrieval | Medium | 🔍 |
+| [X-ray Laminography/Tomography](tasks/xray_laminography_tike/) | tomographic imaging, iterative reconstruction | Easy | 🔍 |
+
+### Earth Science (6 tasks)
+
+| Task | Keywords | Difficulty | Status |
+|------|----------|------------|--------|
+| [Seismic Full Waveform Inversion](tasks/seismic_FWI_original/) | wave imaging, inverse scattering | Medium | ✅ |
+| [Seismic Traveltime Tomography](tasks/seismic_traveltime_tomography/) | traveltime tomography, eikonal equation, adjoint-state method | Medium | ✅ |
+| [Seismic LSRTM](tasks/seismic_lsrtm_original/) | wave imaging, inverse scattering, seismic migration | Medium | 🔍 |
+| [InSAR Phase Unwrapping](tasks/insar_phase_unwrapping/) | phase unwrapping, interferometry | Medium | 🔍 |
+| [Weather Radar Data Assimilation](tasks/weather_radar_data_assimilation/) | data assimilation, variational inversion, radar | Hard | 🔍 |
+| [ERA5 Tensor-Var](tasks/era5_tensorvar/) | data assimilation, weather, deep kernel features, variational inference | Hard | 🔍 |
+
+### Medicine (22 tasks)
+
+| Task | Keywords | Difficulty | Status |
+|------|----------|------------|--------|
+| [Fan-Beam CT](tasks/ct_fan_beam/) | computed tomography, fan-beam geometry, filtered back-projection | Medium | 🔍 |
+| [Sparse-View CT](tasks/ct_sparse_view/) | computed tomography, sparse-view imaging, regularized reconstruction | Medium | 🔍 |
+| [Low-Dose CT (Poisson)](tasks/ct_poisson_lowdose/) | computed tomography, statistical reconstruction, Poisson noise | Medium | 🔍 |
+| [Dual-Energy CT](tasks/ct_dual_energy/) | dual-energy CT, material decomposition, spectral imaging | Medium | 🔍 |
+| [X-ray CT Tooth (Gridrec)](tasks/xray_tooth_gridrec/) | computed tomography, filtered back-projection | Easy | 🔍 |
+| [MRI L1-Wavelet](tasks/mri_l1_wavelet/) | compressed sensing, MRI reconstruction | Easy | 🔍 |
+| [MRI Total Variation](tasks/mri_tv/) | compressed sensing, MRI reconstruction | Easy | 🔍 |
+| [MRI T2 Mapping](tasks/mri_t2_mapping/) | quantitative MRI, parameter estimation | Easy | 🔍 |
+| [MRI CG-SENSE](tasks/mri_sense/) | parallel imaging, image-domain reconstruction | Medium | 🔍 |
+| [MRI GRAPPA](tasks/mri_grappa/) | parallel imaging, k-space interpolation | Medium | 🔍 |
+| [MRI Non-Cartesian CS](tasks/mri_noncartesian_cs/) | compressed sensing, non-Cartesian MRI | Medium | 🔍 |
+| [Diffusion MRI DTI](tasks/diffusion_mri_dti/) | quantitative MRI, parameter estimation, diffusion imaging | Medium | 🔍 |
+| [Dynamic DCE-MRI](tasks/mri_dynamic_dce/) | dynamic MRI, temporal regularization | Medium | 🔍 |
+| [MRI PnP-ADMM](tasks/mri_pnp_admm/) | compressed sensing MRI, plug-and-play, learned prior | Medium | 🔍 |
+| [MRI VarNet](tasks/mri_varnet/) | deep learning reconstruction, unrolled network | Hard | 🔍 |
+| [PnP-MSSN MRI](tasks/pnp_mri_reconstruction/) | plug-and-play, self-supervised learning | Medium | ⚠️ |
+| [Plane Wave Ultrasound (Stolt f-k)](tasks/plane_wave_ultrasound/) | wave imaging, ultrafast imaging | Medium | 🔍 |
+| [Ultrasound Speed-of-Sound Tomography](tasks/ultrasound_sos_tomography/) | ultrasound tomography, transmission imaging, iterative reconstruction | Medium | 🔍 |
+| [USCT Full Waveform Inversion](tasks/usct_FWI/) | wave imaging, full-waveform inversion | Hard | 🔍 |
+| [PET MLEM](tasks/pet_mlem/) | emission tomography, Poisson reconstruction, expectation maximization | Medium | 🔍 |
+| [Photoacoustic Tomography](tasks/photoacoustic_tomography/) | photoacoustic imaging, wave imaging, back-projection | Medium | 🔍 |
+| [EIT Conductivity Reconstruction](tasks/eit_conductivity_reconstruction/) | impedance imaging, regularized inversion, finite element method | Medium | 🔍 |
+
+---
+
+## Design Philosophy
+
+Each task is structured around a common template:
+
+```
+tasks/<task_name>/
+├── README.md               # Physics background, problem formulation, references
+├── requirements.txt        # Dependencies
+├── main.py                 # Reconstruction pipeline entry point
+├── data/
+│   ├── raw_data.npz        # Observation data (keys documented in README)
+│   ├── ground_truth.npz    # Ground truth (keys documented in README)
+│   └── meta_data.json      # Imaging parameters (JSON)
+├── plan/
+│   ├── approach.md         # Solution methodology (L2 hint)
+│   └── design.md           # Code architecture with function signatures (L3 hint)
+├── src/
+│   ├── physics_model.py    # Physics-based forward model
+│   ├── preprocessing.py    # Raw data -> processed observations
+│   ├── solvers.py          # Inverse problem solvers
+│   ├── visualization.py    # Plotting utilities and metrics
+│   └── generate_data.py    # Synthetic data generation (optional)
+├── evaluation/
+│   ├── metrics.json        # Evaluation boundaries (NCC, NRMSE)
+│   ├── reference_outputs/  # Ground truth, precomputed results
+│   ├── fixtures/           # Per-function test data
+│   └── tests/              # Unit tests for function-mode evaluation
+└── notebooks/
+    └── <task_name>.ipynb   # End-to-end tutorial
+```
+
+**Principles:**
+- Forward models grounded in physics, not black boxes
+- Solvers span the spectrum: analytical → iterative → regularized → learned
+- Most tasks include synthetic data generation; a few use real experimental data
+- Code written for clarity and education, not just performance
+- Standardized data interface: observations in `data/raw_data.npz`, ground truth in `data/ground_truth.npz`
+
+---
+
+## Evaluation
+
+### Modes
+
+| Mode | What it tests | Metrics |
+|------|--------------|---------|
+| **Function** (`--mode function`) | Individual module implementations (physics_model, preprocessing, solvers) | Per-module test pass rate |
+| **End-to-End** (`--mode end_to_end`) | Full pipeline from scratch | NCC, NRMSE reconstruction quality |
+| **Plan** (`--mode plan`) | Planning ability only | LLM-as-judge pairwise + rubric scoring |
+
+### Difficulty Levels (end-to-end)
+
+| Level | Agent receives |
+|-------|---------------|
+| L1 | Task README only (agent plans from scratch) |
+| L2 | README + approach.md |
+| L3 | README + approach.md + design.md |
+
+### Agent Frameworks
+
+| Framework | CLI Flag | Description |
+|-----------|----------|-------------|
+| **ReAct** | `--framework react` | Single-agent: Thought → Action → Observation loop |
+| **Multi-Agent** | `--framework multi_agent` | Pipeline: Planner → Critic → Architect → Coder → Judge |
+| **Copilot** | `--framework copilot` | Third-party agent: prepares sandbox + prompt, agent works externally |
+| **DeepCode** | `--framework deepcode` | HKUDS DeepCode autonomous multi-agent |
+
+For detailed evaluation instructions, see [docs/EVALUATION_GUIDE.md](docs/EVALUATION_GUIDE.md).
+
+---
+
+## LLM Configuration
+
+Edit `config_llm.yaml` or pass credentials directly via CLI flags (`--model`, `--base-url`, `--api-key`):
+
+```yaml
+"your-model-name":
+    api_type: "openai"
+    base_url: "https://your-api-gateway/v1"
+    api_key: "YOUR_API_KEY"
+    temperature: 0.2
+```
 
 ---
 
@@ -11,216 +282,27 @@ with standardized task structure, reference implementations, and automated evalu
 
 ```
 imaging-101/
-├── CLAUDE.md                     # Agent guidance (coding conventions, evaluation rules)
-├── config_llm.yaml               # LLM provider/model configurations
+├── tasks/                        # 57 imaging tasks (see tables above)
 ├── evaluation_harness/           # Benchmark evaluation framework
-│   ├── __main__.py               # CLI entry point: python -m evaluation_harness run ...
-│   ├── config.py                 # LLMConfig / TaskConfig / RunConfig dataclasses
-│   ├── runner.py                 # Top-level orchestrator (BenchmarkRunner)
-│   ├── agent.py                  # ReAct agent loop (Thought → Action → Observation)
-│   ├── multi_agent.py            # Multi-agent pipeline (Planner/Critic/Architect/Coder/Judge)
-│   ├── scorer.py                 # pytest runner + quality metrics + visualization generation
-│   ├── visualizer.py             # Auto-generates comparison/residual/metrics figures
-│   ├── llm_client.py             # OpenAI-compatible API calls
-│   ├── prompts.py                # Prompt templates per evaluation mode
-│   ├── local_runner.py           # Local sandbox backend
-│   ├── docker_runner.py          # Docker container sandbox backend
-│   ├── Dockerfile                # Sandbox image (Python 3.11 + numpy/scipy/matplotlib/pytest)
-│   └── agents/                   # Multi-agent sub-agent modules
-├── tasks/                        # Individual imaging tasks (see Task Template below)
-│   ├── eht_black_hole/
-│   ├── eht_black_hole_original/  # ← Primary benchmark task (cleaned from ehtim)
-│   ├── eht_black_hole_dynamic/
-│   ├── eht_black_hole_tomography/
-│   ├── eht_black_hole_UQ/
-│   ├── light_field_microscope/
-│   ├── reflection_ODT/
-│   ├── single_molecule_light_field/
-│   ├── SSNP_ODT/
-│   └── ...
-├── skills/                       # Shared skill library (available to agents)
-├── scripts/                      # Convenience scripts for running evaluations
-│   ├── run_end2end_gemini.sh     # End-to-end eval with Gemini (react + multi_agent)
-│   ├── run_function_evals.sh     # Function-level eval for all modules
-│   ├── run_preprocessing_eval_gemini.sh
-│   ├── run_comparison.sh
-│   └── compare_frameworks.py     # Python script: runs both frameworks & writes comparison JSON
-├── results/                      # Evaluation result JSONs + figure artifacts
-│   └── figures/                  # Auto-generated visualization outputs
-├── logs/
-│   ├── eval_runs/                # Run logs
-│   └── interactions/             # Agent interaction transcripts
-└── README.md                     # ← You are here
-```
-
----
-
-## Tasks
-
-| Task | Domain | Measurement | Status |
-|------|--------|-------------|--------|
-| [EHT Black Hole Original](tasks/eht_black_hole_original/) | Radio astronomy | Sparse Fourier (VLBI) | ✅ Cleaned & evaluated |
-| [EHT Black Hole](tasks/eht_black_hole/) | Radio astronomy | Sparse Fourier (VLBI) | ✅ Reference |
-| [EHT Black Hole UQ](tasks/eht_black_hole_UQ/) | Radio astronomy | Uncertainty quantification | ✅ Reference |
-| [EHT Black Hole Dynamic](tasks/eht_black_hole_dynamic/) | Radio astronomy | Dynamic imaging | 🔧 In progress |
-| [Light Field Microscope](tasks/light_field_microscope/) | Biology | Light field | 🔧 In progress |
-| [Reflection ODT](tasks/reflection_ODT/) | Biology | Diffraction tomography | 🔧 In progress |
-| [SSNP ODT](tasks/SSNP_ODT/) | Biology | Scattering tomography | 🔧 In progress |
-| *More coming soon* | | | |
-
----
-
-## Task Template
-
-Every task follows a standardized layout:
-
-```
-tasks/<task_name>/
-├── README.md                  # Problem definition: physics, data description, method hints
-├── requirements.txt           # Sandbox environment dependencies
-├── main.py                    # Pipeline entry point
-├── data/
-│   ├── raw_data.npz           # Observation data (format varies per task)
-│   └── meta_data              # JSON: imaging parameters for forward modeling
-├── plan/
-│   ├── approach.md            # Solution methodology and algorithm description
-│   └── design.md              # Code architecture with function signatures
-├── src/
-│   ├── preprocessing.py       # Raw data → processed observations (y)
-│   ├── physics_model.py       # Forward model: x → y
-│   ├── solvers.py             # Inverse solvers: y → x_hat
-│   ├── visualization.py       # Plotting utilities and metrics
-│   └── generate_data.py       # Optional: synthetic data generation
-├── notebooks/
-│   └── <task_name>.ipynb      # End-to-end tutorial notebook (user review interface)
-└── evaluation/
-    ├── reference_outputs/     # Ground truth, metrics.json, pretrained checkpoints
-    ├── fixtures/              # Per-function test fixtures
-    └── tests/                 # Unit tests, parity tests, integration tests
-```
-
-**Design Principles:**
-- Forward models grounded in physics, not black boxes
-- Solvers span the spectrum: analytical → iterative → regularized → learned
-- All tasks include synthetic data generation (no external downloads required)
-- Code written for clarity and education, not just performance
-
----
-
-## Getting Started
-
-### 1. Clone & install
-
-```bash
-git clone https://github.com/HeSunPU/imaging-101.git
-cd imaging-101
-
-# Install harness dependencies
-pip install -r evaluation_harness/requirements.txt
-
-# Install task-specific dependencies
-pip install -r tasks/eht_black_hole_original/requirements.txt
-```
-
-### 2. Configure LLM provider
-
-Edit `config_llm.yaml` or pass via CLI flags:
-
-```yaml
-# config_llm.yaml example
-"gemini-2.5-pro":
-  api_type: "openai"
-  base_url: "https://your-api-gateway/v1"
-  api_key: "your-api-key"
-  temperature: 0.2
-```
-
-Or use environment variables:
-```bash
-export OPENAI_API_KEY="your-api-key"
-```
-
-### 3. (Optional) Build Docker sandbox
-
-```bash
-docker build -t imaging101-sandbox -f evaluation_harness/Dockerfile .
-```
-
-> If Docker is unavailable, the harness falls back to `LocalRunner` automatically.
-
----
-
-## Evaluation Modes
-
-The harness supports three evaluation modes, each testing different agent capabilities:
-
-### Plan Generation
-
-Agent sees `README.md` + `data/` and generates solution plan files.
-
-```bash
-python -m evaluation_harness run \
-    --task eht_black_hole_original \
-    --mode plan \
-    --model gemini-2.5-pro \
-    --base-url https://your-api/v1 \
-    --api-key $API_KEY
-```
-
-### Function-Level
-
-Agent implements a single function (e.g., `preprocessing.load_observation`), tested by unit tests.
-
-```bash
-python -m evaluation_harness run \
-    --task eht_black_hole_original \
-    --mode function \
-    --target-function preprocessing.load_observation \
-    --model gemini-2.5-pro \
-    --base-url https://your-api/v1 \
-    --api-key $API_KEY
-```
-
-### End-to-End
-
-Agent plans + implements the full `src/` pipeline + `main.py`, producing `output/reconstruction.npy`.
-Quality metrics (NRMSE, NCC, PSNR, SSIM) and **comparison visualizations** are generated automatically.
-
-```bash
-python -m evaluation_harness run \
-    --task eht_black_hole_original \
-    --mode end_to_end \
-    --framework react \
-    --model gemini-2.5-pro \
-    --max-iterations 50 \
-    --timeout 600 \
-    --base-url https://your-api/v1 \
-    --api-key $API_KEY \
-    --output results \
-    -v
-```
-
----
-
-## Agent Frameworks
-
-| Framework | CLI Flag | Description |
-|-----------|----------|-------------|
-| **ReAct** | `--framework react` (default) | Single-agent loop: Thought → Action → Observation. Actions: `DO`, `RUN`, `WRITE_FILE`, `READ_FILE` |
-| **Multi-Agent** | `--framework multi_agent` | Pipeline of specialized agents: Planner → Critic → Architect → Coder → Judge |
-
-### Compare frameworks side-by-side
-
-```bash
-# Using the convenience script
-bash scripts/run_end2end_gemini.sh
-
-# Or using the Python comparator
-python scripts/compare_frameworks.py \
-    --task eht_black_hole_original \
-    --model gemini-2.5-pro \
-    --base-url https://your-api/v1 \
-    --api-key $API_KEY
+│   ├── __main__.py               #   CLI: run | prepare | collect | summarize
+│   ├── runner.py                 #   BenchmarkRunner orchestrator
+│   ├── scorer.py                 #   pytest runner + NCC/NRMSE quality metrics
+│   ├── config.py                 #   LLMConfig / TaskConfig / RunConfig
+│   ├── llm_client.py             #   OpenAI-compatible API client
+│   ├── prompts.py                #   Prompt templates per evaluation mode
+│   ├── multi_agent.py            #   Multi-agent pipeline orchestrator
+│   ├── agents/                   #   Agent role implementations
+│   └── frameworks/               #   Framework adapters (react, multi_agent, copilot, deepcode)
+├── scripts/                      # Batch evaluation & analysis scripts
+├── results/                      # Evaluation outputs
+│   ├── function_mode/            #   51 tasks × 7 models (canonical)
+│   ├── end_to_end/               #   Per-framework subdirs
+│   └── audit/                    #   Summary CSVs
+├── docs/                         # Documentation
+│   ├── EVALUATION_GUIDE.md       #   Step-by-step evaluation tutorial
+│   └── NEW_TASK_GUIDE.md         #   How to add a new task
+├── config_llm.yaml               # LLM provider/model configurations
+└── CLAUDE.md                     # Agent guidance
 ```
 
 ---
@@ -228,115 +310,31 @@ python scripts/compare_frameworks.py \
 ## CLI Reference
 
 ```
-python -m evaluation_harness run [OPTIONS]
+python -m evaluation_harness <command> [OPTIONS]
 
-Required:
+Commands:
+  run          Run a benchmark evaluation
+  prepare      Prepare sandbox for third-party agent
+  collect      Collect and score third-party agent results
+  summarize    Generate summary.json for function-mode runs
+
+run options:
   --task TEXT              Task name (e.g., eht_black_hole_original)
-  --mode TEXT              Evaluation mode: plan | function | end_to_end
+  --mode TEXT              Evaluation mode: function | end_to_end | plan
   --model TEXT             LLM model identifier
-
-Mode-specific:
-  --target-function TEXT   Function target for function mode (e.g., preprocessing.load_observation)
-  --framework TEXT         Agent framework: react | multi_agent (default: react)
-
-LLM configuration:
-  --base-url TEXT          API base URL (default: https://api.openai.com/v1)
-  --api-key TEXT           API key (or set OPENAI_API_KEY env var)
-
-Execution:
+  --target-function TEXT   Function target for function mode
+  --framework TEXT         Agent framework: react | multi_agent | copilot | deepcode
+  --level TEXT             Difficulty level: L1 | L2 | L3 (default: L1)
+  --base-url TEXT          API base URL
+  --api-key TEXT           API key (or set OPENAI_API_KEY)
   --max-iterations INT     Maximum agent iterations (default: 20)
   --timeout INT            Execution timeout in seconds (default: 600)
-  --docker-image TEXT      Docker sandbox image (default: imaging101-sandbox)
-
-Output:
   --output TEXT            Output directory (default: results)
-  --log-file TEXT          Log file path (default: logs/interactions/<task>_<mode>_<ts>.md)
   -v, --verbose            Verbose output
 ```
 
 ---
 
-## Output Structure
-
-After an evaluation run, artifacts are organized as follows:
-
-### Result JSON
-
-```
-results/<task>_<mode>_<framework>_<model>_<timestamp>.json
-```
-
-Example fields:
-```json
-{
-  "task_name": "eht_black_hole_original",
-  "mode": "end_to_end",
-  "model": "gemini-2.5-pro",
-  "framework": "multi_agent",
-  "quality_metrics": {
-    "nrmse": 0.738,
-    "ncc": 0.701,
-    "psnr": 19.6,
-    "ssim": 0.345
-  },
-  "total_tokens": 1291011,
-  "wall_time_seconds": 5302,
-  "iterations": 8,
-  "visualization_paths": { ... }
-}
-```
-
-### Auto-Generated Visualizations (end_to_end mode)
-
-```
-results/figures/<run_id>/
-├── comparison.png        # Side-by-side: reconstruction vs ground truth
-├── residual.png          # Residual map (reconstruction - GT)
-├── metrics_card.png      # Quality metrics summary card
-├── cross_section.png     # Cross-section comparison plot
-└── reconstruction.npy    # Copy of agent's output
-```
-
-### Agent Interaction Logs
-
-```
-logs/interactions/<task>_<mode>[_<target>]_<timestamp>.md
-```
-
----
-
-## Evaluation Workflow
-
-The `end_to_end` evaluation flow:
-
-```
-1. Agent receives: README.md + data/ (raw_data.npz, meta_data)
-2. Agent generates: plan/approach.md + plan/design.md
-3. Agent implements: src/*.py + main.py
-4. Harness runs: main.py → output/reconstruction.npy
-5. Scorer computes: quality metrics (NRMSE, NCC, PSNR, SSIM) vs ground_truth.npy
-6. Visualizer generates: comparison, residual, metrics card, cross-section figures
-7. Results saved: results/<run_id>.json + results/figures/<run_id>/
-```
-
----
-
-## Scripts
-
-| Script | Description |
-|--------|-------------|
-| `scripts/run_end2end_gemini.sh` | Run e2e eval with Gemini-2.5-pro (both react & multi_agent) |
-| `scripts/run_function_evals.sh` | Run function-level evals for all src modules |
-| `scripts/run_preprocessing_eval_gemini.sh` | Single function eval: preprocessing module |
-| `scripts/run_comparison.sh` | Run framework comparison |
-| `scripts/compare_frameworks.py` | Python: run both frameworks, write comparison JSON |
-
----
-
 ## Contributing
 
-To add a new imaging task, follow the task template and submit a pull request.
-See `CLAUDE.md` for detailed task cleaning guidelines and coding conventions.
-
-Tasks of interest: X-ray CT, MRI, phase retrieval, lensless imaging,
-seismic imaging, optical coherence tomography, and more.
+To add a new imaging task, follow the [New Task Guide](docs/NEW_TASK_GUIDE.md) and submit a pull request.

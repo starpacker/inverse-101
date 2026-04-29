@@ -1,0 +1,13 @@
+{
+  "baseline": [
+    {
+      "method": "qNewton (200 iterations)",
+      "ncc_vs_ref": 0.9610,
+      "nrmse_vs_ref": 0.0460
+    }
+  ],
+  "ncc_boundary": 0.865,
+  "nrmse_boundary": 0.0506,
+  "nrmse_definition": "NRMSE = sqrt(mean((phase_recon - phase_gt)^2)) / (max(phase_gt) - min(phase_gt)), where phase_gt = angle(GT) - mean(angle(GT)) and phase_recon = angle(ifft2c(recon_kspace)) - mean(angle(ifft2c(recon_kspace))). Mean subtraction resolves the global phase ambiguity of ptychographic reconstruction.",
+  "ncc_definition": "NCC = dot(phase_recon.flatten(), phase_gt.flatten()) / (||phase_recon|| * ||phase_gt||) (cosine similarity per CLAUDE.md standard; mean subtraction applied beforehand as phase-alignment pre-processing to resolve the global phase ambiguity of ptychographic reconstruction, not as part of the NCC formula itself)."
+}

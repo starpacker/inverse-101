@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "StarWarps",
+      "ncc": 0.882,
+      "nrmse": 0.0638
+    }
+  ],
+  "ncc_boundary": 0.793,
+  "nrmse_boundary": 0.070
+}

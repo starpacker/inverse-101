@@ -8,13 +8,13 @@ tasks/single_molecule_light_field/
 ├── requirements.txt
 ├── main.py                     # Entry point: runs full pipeline
 ├── data/
-│   ├── raw_data.csv            # 2D localisations (PeakFit format, 151k rows)
+│   ├── raw_data.npz            # Bundled raw localisations (PeakFit-style columns)
 │   └── meta_data.json          # All microscope and fitting parameters
 ├── plan/
 │   ├── approach.md             # Algorithm description
 │   └── design.md               # This file
 ├── src/
-│   ├── preprocessing.py        # Load CSV, scale pixels→µm, centre
+│   ├── preprocessing.py        # Load NPZ / extract PeakFit cols, scale, centre
 │   ├── physics_model.py        # FourierMicroscope, MLA, lens assignment, alpha
 │   ├── solvers.py              # 3D fitting (aberration pass + full pass)
 │   └── visualization.py        # Plot helpers (MLA alignment, 3D, histograms)
@@ -36,8 +36,12 @@ tasks/single_molecule_light_field/
 ### `src/preprocessing.py`
 
 ```python
-def load_localizations(csv_file: Path, meta: dict) -> np.ndarray:
+def load_localizations(npz_path: Path, meta: dict) -> np.ndarray:
     """
+    Accepts either:
+    - a standardised (N, 8) localisation array in `raw_data.npz`, or
+    - the bundled raw PeakFit-style array, from which the required columns are extracted
+
     Returns: locs_2d_csv (N, 8) — columns:
         [0] frame, [1] X µm, [2] Y µm, [3] sigma_X µm,
         [4] sigma_Y µm, [5] intensity ph, [6] background ph, [7] precision µm
@@ -130,11 +134,13 @@ def plot_occurrences(fig, locs_3d, max_lateral_err=None, min_views=None) -> Figu
 
 ## Data Formats
 
-### Input: `raw_data.csv` (PeakFit format)
-- Header lines starting with `#`
-- Comma-separated numeric data
-- Column 0: frame, col 7: background, col 8: intensity, col 9: X (pixels),
+### Input: `raw_data.npz`
+- Key `localizations_2d` contains the bundled raw PeakFit-style array
+- Raw columns used by preprocessing:
+  col 0: frame, col 7: background, col 8: intensity, col 9: X (pixels),
   col 10: Y (pixels), col 12: sigma (pixels), col 13: precision (nm)
+- `src.preprocessing.load_localizations` converts these columns into the
+  internal standardised `(N, 8)` array in physical units
 
 ### Output: `locs_3d.csv`
 - No header lines, comma-separated
@@ -142,11 +148,10 @@ def plot_occurrences(fig, locs_3d, max_lateral_err=None, min_views=None) -> Figu
 
 ## External Dependencies
 
-The `smlfm` package (PyPI: `PySMLFM`) provides the core algorithm implementations:
-- `smlfm.FourierMicroscope` — derived optic quantities
-- `smlfm.MicroLensArray` — hexagonal/square lattice generation, rotation
-- `smlfm.Localisations` — lens assignment, filtering, alpha model, aberration correction
-- `smlfm.Fitting` — OLS-based 3D fitting, view error calculation
-- `smlfm.graphs.*` — matplotlib-based visualisation
+All algorithm logic is implemented directly in `src/` using standard scientific Python:
+- `numpy` — array operations, OLS fitting (`np.linalg.lstsq`)
+- `scipy` — hexagonal lattice generation, spatial utilities
+- `scikit-learn` — k-NN search for lens assignment
+- `matplotlib` — visualisation
 
-The `src/` modules serve as a clean, documented API over this library.
+No task-specific research packages are required.

@@ -1,0 +1,26 @@
+{
+    "task": "insar_phase_unwrapping",
+    "description": "Unwrap 2D interferometric SAR (InSAR) phase using sparse optimization (ADMM)",
+    "sensor": "Sentinel-1A",
+    "dates": ["2015-03-28", "2015-04-09"],
+    "temporal_baseline_days": 12,
+    "image_dimensions": {
+        "rows": 778,
+        "columns": 947,
+        "coordinate_system": "range-azimuth"
+    },
+    "geolocation": {
+        "x_first": -103.452222223756,
+        "y_first": 31.859166667061,
+        "x_step": 0.00027777778,
+        "y_step": -0.00027777778,
+        "x_unit": "degrees",
+        "y_unit": "degrees",
+        "projection": "LL"
+    },
+    "reference": {
+        "paper": "Exploiting Sparsity for Phase Unwrapping, Chartrand et al., IGARSS 2019",
+        "method": "ADMM with nonconvex sparsity-promoting penalty (G0 shrinkage)",
+        "baseline_method": "SNAPHU (Statistical-cost Network-flow Algorithm for Phase Unwrapping)"
+    }
+}

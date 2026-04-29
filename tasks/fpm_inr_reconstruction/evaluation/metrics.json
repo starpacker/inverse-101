@@ -1,0 +1,14 @@
+{
+  "baseline": [
+    {
+      "method": "FPM-INR with factored 3D implicit neural representation (Zhou et al. 2023)",
+      "ncc_vs_ref": 0.9971,
+      "nrmse_vs_ref": 0.0710,
+      "aif_l2_error": 0.001325,
+      "per_slice_psnr_mean": 22.79,
+      "per_slice_ssim_mean": 0.7753
+    }
+  ],
+  "ncc_boundary": 0.8974,
+  "nrmse_boundary": 0.0781
+}

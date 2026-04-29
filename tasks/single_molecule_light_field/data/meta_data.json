@@ -1,105 +1,92 @@
 {
-    "_description": "Microscope parameters for BCR fixed B cell FLFM dataset (Sims et al. 2020, Optica)",
-
-    "_csv_format_doc": "Format of 2D localisation CSV file. PEAKFIT = ImageJ GDSC SMLM2 PeakFit output.",
-    "csv_format": "PEAKFIT",
-
-    "_mla_type_doc": "MLA lattice arrangement: HEXAGONAL or SQUARE.",
-    "mla_type": "HEXAGONAL",
-
-    "_mla_lens_pitch_doc": "Pitch between adjacent microlens centers, parallel to optical table (microns).",
-    "mla_lens_pitch": 2390.0,
-
-    "_mla_optic_size_doc": "Physical diameter of the MLA optic (microns). Determines how many lenses are in the array.",
-    "mla_optic_size": 10000.0,
-
-    "_mla_centre_doc": "X,Y centre of the MLA in lattice-spacing units (fractional lens spacings).",
-    "mla_centre": [0.0, 0.0],
-
-    "_mla_rotation_doc": "Rotation of MLA relative to camera axes (degrees). Must be tuned to match data.",
-    "mla_rotation": 30.8,
-
-    "_mla_offset_doc": "X,Y offset of MLA relative to camera centre (microns). Usually [0,0] after centering.",
-    "mla_offset": [0.0, 0.0],
-
-    "_focal_length_mla_doc": "Focal length of the microlens array (mm).",
-    "focal_length_mla": 175.0,
-
-    "_focal_length_obj_lens_doc": "Focal length of the objective lens (mm). For a 60x objective with 200mm tube: f_obj = 200/60.",
-    "focal_length_obj_lens": 3.3333333333333335,
-
-    "_focal_length_fourier_lens_doc": "Focal length of the Fourier relay lens (mm). Places BFP at MLA plane.",
-    "focal_length_fourier_lens": 175.0,
-
-    "_focal_length_tube_lens_doc": "Focal length of the tube lens (mm).",
-    "focal_length_tube_lens": 200.0,
-
-    "_num_aperture_doc": "Numerical aperture of the objective.",
-    "num_aperture": 1.27,
-
-    "_ref_idx_immersion_doc": "Refractive index of immersion medium.",
-    "ref_idx_immersion": 1.33,
-
-    "_ref_idx_medium_doc": "Refractive index of specimen/sample medium.",
-    "ref_idx_medium": 1.33,
-
-    "_pixel_size_camera_doc": "Camera pixel size (microns).",
-    "pixel_size_camera": 16.0,
-
-    "_z_calib_doc": "Calibration factor converting optical (parallax) Z to physical Z distance (microns/micron). Determined experimentally by imaging beads at known axial positions.",
-    "z_calib": 1.534,
-
-    "_filter_lenses_doc": "Remove localizations assigned to microlenses outside the BFP radius.",
-    "filter_lenses": true,
-
-    "_filter_rhos_doc": "Keep only localizations with normalised pupil radius rho in [min, max]. null = no filter.",
-    "filter_rhos": null,
-
-    "_filter_spot_sizes_doc": "Keep only localizations with spot sigma in [min, max] microns. null = no filter.",
-    "filter_spot_sizes": null,
-
-    "_filter_photons_doc": "Keep only localizations with photon count in [min, max]. null = no filter.",
-    "filter_photons": null,
-
-    "_alpha_model_doc": "Model for angular sensitivity alpha(u,v). LINEAR: alpha=uv; SPHERE: spherical wavefront; INTEGRATE_SPHERE: phase-averaged over microlens aperture (most accurate).",
-    "alpha_model": "INTEGRATE_SPHERE",
-
-    "_fit_params_aberration_doc": "Fitting parameters for aberration-correction pass (first 1000 frames).",
-    "fit_params_aberration": {
-        "frame_min": -1,
-        "frame_max": -1,
-        "disparity_max": 5.0,
-        "disparity_step": 0.1,
-        "dist_search": 0.5,
-        "angle_tolerance": 2.0,
-        "threshold": 1.0,
-        "min_views": 3,
-        "z_calib": null
-    },
-
-    "_aberration_params_doc": "Criteria for which fitted molecules contribute to the aberration map.",
-    "aberration_params": {
-        "axial_window": 1.0,
-        "photon_threshold": 1,
-        "min_views": 3
-    },
-
-    "_fit_params_full_doc": "Fitting parameters for the final full-dataset pass.",
-    "fit_params_full": {
-        "frame_min": -1,
-        "frame_max": -1,
-        "disparity_max": 8.0,
-        "disparity_step": 0.1,
-        "dist_search": 0.5,
-        "angle_tolerance": 1.0,
-        "threshold": 0.3,
-        "min_views": 2,
-        "z_calib": 1.534
-    },
-
-    "_show_max_lateral_err_doc": "Filter threshold for visualization: maximum lateral fit error (nm).",
-    "show_max_lateral_err": 200.0,
-
-    "_show_min_view_count_doc": "Filter threshold for visualization: minimum number of views.",
-    "show_min_view_count": 3
+  "_description": "Microscope parameters for BCR fixed B cell FLFM dataset (Sims et al. 2020, Optica)",
+  "_csv_format_doc": "Format of 2D localisation CSV file. PEAKFIT = ImageJ GDSC SMLM2 PeakFit output.",
+  "csv_format": "PEAKFIT",
+  "_mla_type_doc": "MLA lattice arrangement: HEXAGONAL or SQUARE.",
+  "mla_type": "HEXAGONAL",
+  "_mla_lens_pitch_doc": "Pitch between adjacent microlens centers, parallel to optical table (microns).",
+  "mla_lens_pitch": 2390.0,
+  "_mla_optic_size_doc": "Physical diameter of the MLA optic (microns). Determines how many lenses are in the array.",
+  "mla_optic_size": 10000.0,
+  "_mla_centre_doc": "X,Y centre of the MLA in lattice-spacing units (fractional lens spacings).",
+  "mla_centre": [
+    0.0,
+    0.0
+  ],
+  "_mla_rotation_doc": "Rotation of MLA relative to camera axes (degrees). Must be tuned to match data.",
+  "mla_rotation": 30.8,
+  "_mla_offset_doc": "X,Y offset of MLA relative to camera centre (microns). Usually [0,0] after centering.",
+  "mla_offset": [
+    0.0,
+    0.0
+  ],
+  "_focal_length_mla_doc": "Focal length of the microlens array (mm).",
+  "focal_length_mla": 175.0,
+  "_focal_length_obj_lens_doc": "Focal length of the objective lens (mm). For a 60x objective with 200mm tube: f_obj = 200/60.",
+  "focal_length_obj_lens": 3.3333333333333335,
+  "_focal_length_fourier_lens_doc": "Focal length of the Fourier relay lens (mm). Places BFP at MLA plane.",
+  "focal_length_fourier_lens": 175.0,
+  "_focal_length_tube_lens_doc": "Focal length of the tube lens (mm).",
+  "focal_length_tube_lens": 200.0,
+  "_num_aperture_doc": "Numerical aperture of the objective.",
+  "num_aperture": 1.27,
+  "_ref_idx_immersion_doc": "Refractive index of immersion medium.",
+  "ref_idx_immersion": 1.33,
+  "_ref_idx_medium_doc": "Refractive index of specimen/sample medium.",
+  "ref_idx_medium": 1.33,
+  "_pixel_size_camera_doc": "Camera pixel size (microns).",
+  "pixel_size_camera": 16.0,
+  "_z_calib_doc": "Calibration factor converting optical (parallax) Z to physical Z distance (microns/micron). Determined experimentally by imaging beads at known axial positions.",
+  "z_calib": 1.534,
+  "_filter_lenses_doc": "Remove localizations assigned to microlenses outside the BFP radius.",
+  "filter_lenses": true,
+  "_filter_rhos_doc": "Keep only localizations with normalised pupil radius rho in [min, max]. null = no filter.",
+  "filter_rhos": null,
+  "_filter_spot_sizes_doc": "Keep only localizations with spot sigma in [min, max] microns. null = no filter.",
+  "filter_spot_sizes": null,
+  "_filter_photons_doc": "Keep only localizations with photon count in [min, max]. null = no filter.",
+  "filter_photons": null,
+  "_alpha_model_doc": "Model for angular sensitivity alpha(u,v). LINEAR: alpha=uv; SPHERE: spherical wavefront; INTEGRATE_SPHERE: phase-averaged over microlens aperture (most accurate).",
+  "alpha_model": "INTEGRATE_SPHERE",
+  "_show_max_lateral_err_doc": "Filter threshold for visualization: maximum lateral fit error (nm).",
+  "show_max_lateral_err": 200.0,
+  "_show_min_view_count_doc": "Filter threshold for visualization: minimum number of views.",
+  "show_min_view_count": 3,
+  "raw_data_columns": [
+    "#Frame",
+    "origX",
+    "origY",
+    "origValue",
+    "Error",
+    "Noise (photon)",
+    "Mean (photon)",
+    "Background (photon)",
+    "Intensity (photon)",
+    "X (px)",
+    "Y (px)",
+    "Z (px)",
+    "S (px)",
+    "Precision (nm)",
+    "Unnamed: 14",
+    "Unnamed: 15",
+    "Unnamed: 16",
+    "Unnamed: 17",
+    "Unnamed: 18",
+    "Unnamed: 19",
+    "Unnamed: 20",
+    "Unnamed: 21",
+    "Unnamed: 22",
+    "Unnamed: 23",
+    "Unnamed: 24",
+    "Unnamed: 25",
+    "Unnamed: 26",
+    "Unnamed: 27",
+    "Unnamed: 28",
+    "Unnamed: 29",
+    "Unnamed: 30",
+    "Unnamed: 31",
+    "Unnamed: 32",
+    "Unnamed: 33",
+    "Unnamed: 34"
+  ]
 }

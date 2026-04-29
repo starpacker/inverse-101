@@ -1,0 +1,15 @@
+{
+    "image_height": 128,
+    "image_width": 128,
+    "n_condition_frames": 6,
+    "n_prediction_frames": 3,
+    "observation_mask_ratio": 0.1,
+    "noise_sigma": 0.001,
+    "noise_type": "gaussian",
+    "mask_seed": 42,
+    "pixel_value_range": [0.0, 1.0],
+    "data_source": "SEVIR-LR VIL (Vertically Integrated Liquid)",
+    "spatial_resolution_km": 4.0,
+    "temporal_resolution_min": 10,
+    "data_type": "vil"
+}

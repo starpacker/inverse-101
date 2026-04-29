@@ -1,0 +1,13 @@
+{
+  "image_size": 256,
+  "num_views": 256,
+  "num_channels": 367,
+  "angle_range_rad": 3.141592653589793,
+  "geometry": "parallel",
+  "delta_channel": 1.0,
+  "delta_pixel": 1.0,
+  "attenuation_scale": 0.02,
+  "I0_low_dose": 1000,
+  "I0_high_dose": 50000,
+  "random_seed": 42
+}

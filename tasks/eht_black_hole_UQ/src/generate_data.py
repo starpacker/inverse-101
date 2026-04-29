@@ -5,6 +5,14 @@ Synthetic Data Generation for DPI
 Generates a synthetic black hole crescent image and simulated EHT observation
 for testing the DPI pipeline without real observation data.
 
+Note: The actual raw_data.npz shipped with this task was created from real
+EHT observation files (obs.uvfits, gt.fits) using ehtim >= 1.2 and
+astropy >= 4.0. Those extra dependencies are NOT listed in requirements.txt
+because the pipeline no longer requires them at runtime. If you need to
+re-generate raw_data.npz or ground_truth.npz from the original FITS/UVFITS
+files, install them manually:
+    pip install ehtim astropy
+
 Reference
 ---------
 Sun & Bouman (2020), arXiv:2010.14462

@@ -1,6 +1,6 @@
 """Preprocessing for Single-Molecule Light Field Microscopy (SMLFM).
 
-Converts raw PeakFit CSV output to centred 2D localisation arrays
+Loads 2D localisation data from raw_data.npz and prepares centred arrays
 ready for microlens assignment and 3D fitting.
 
 Extracted from: hexSMLFM / PySMLFM (TheLeeLab / Photometrics, Cambridge).
@@ -12,107 +12,56 @@ import numpy as np
 import numpy.typing as npt
 
 
-def load_localizations(csv_file: Path, meta: dict) -> npt.NDArray[float]:
-    """Load 2D localizations from a PeakFit/Thunderstorm/Picasso CSV file.
+def load_localizations(npz_path: Path, meta: dict) -> npt.NDArray[float]:
+    """Load 2D localizations from raw_data.npz.
 
-    Reads the CSV, selects the appropriate columns for the given format,
-    and converts coordinates to physical microns.
-
-    Supported formats and their column layouts:
-
-    PEAKFIT (ImageJ GDSC SMLM2):
-        col 0: frame, col 7: background (ph), col 8: intensity (ph),
-        col 9: X (pixels), col 10: Y (pixels), col 12: sigma (pixels),
-        col 13: precision (nm).  X/Y/sigma are in pixels — multiply by
-        pixel_size_sample to get microns.
-
-    THUNDERSTORM:
-        col 0: frame, col 1: X (nm), col 2: Y (nm), col 3: sigma (nm),
-        col 4: intensity (ph), col 5: background (ph), col 6: precision (nm).
-
-    PICASSO:
-        col 1: frame, col 2: X (nm), col 3: Y (nm), col 4: sigma (nm),
-        col 5: intensity (ph), col 6: background (ph), col 8: precision (nm).
+    Supports two raw_data.npz layouts:
+    1. Standardized (N, 8) array already converted to physical units:
+        [0] frame
+        [1] X (microns)
+        [2] Y (microns)
+        [3] sigma_X (microns)
+        [4] sigma_Y (microns)
+        [5] intensity (photons)
+        [6] background (photons)
+        [7] precision (microns)
+    2. Raw PeakFit export with many columns, as bundled in this task.
+       In that case the required columns are extracted and converted to
+       the standardized (N, 8) representation above.
 
     Args:
-        csv_file: Path to the 2D localisation CSV.
-        meta: Dictionary loaded from meta_data.json.  Uses keys:
-            csv_format (str), num_aperture, mla_lens_pitch, focal_length_mla,
-            focal_length_obj_lens, focal_length_tube_lens,
-            focal_length_fourier_lens, pixel_size_camera.
+        npz_path: Path to the raw_data.npz file.
+        meta: Dictionary loaded from meta_data.json (unused, kept for API compatibility).
 
     Returns:
-        locs_2d_csv (N, 8) float array with columns:
-            [0] frame
-            [1] X (microns)
-            [2] Y (microns)
-            [3] sigma_X (microns)
-            [4] sigma_Y (microns)
-            [5] intensity (photons)
-            [6] background (photons)
-            [7] precision (microns)
+        locs_2d_csv (N, 8) float array with columns as described above.
     """
-    fmt = meta["csv_format"].upper()
+    d = np.load(npz_path)
+    raw = d["localizations_2d"].astype(float)
 
-    if fmt == "PEAKFIT":
-        id_frame, id_x, id_y = 0, 9, 10
-        id_sigma_x = id_sigma_y = 12
-        id_intensity, id_background, id_precision = 8, 7, 13
-        min_columns = 14
-        scale_xy = 1.0      # pixels; will be multiplied by pixel_size_sample below
-        scale_pr = 1000.0   # nm → µm
-    elif fmt == "THUNDERSTORM":
-        id_frame, id_x, id_y = 0, 1, 2
-        id_sigma_x = id_sigma_y = 3
-        id_intensity, id_background, id_precision = 4, 5, 6
-        min_columns = 7
-        scale_xy = 1000.0   # nm → µm
-        scale_pr = 1000.0
-    elif fmt == "PICASSO":
-        id_frame, id_x, id_y = 1, 2, 3
-        id_sigma_x = id_sigma_y = 4
-        id_intensity, id_background, id_precision = 5, 6, 8
-        min_columns = 9
-        scale_xy = 1000.0   # nm → µm
-        scale_pr = 1000.0
-    else:
-        raise ValueError(f"Unsupported csv_format: {fmt!r}. "
-                         "Choose PEAKFIT, THUNDERSTORM, or PICASSO.")
+    if raw.ndim != 2:
+        raise ValueError(f"Expected a 2D localisation array, got shape {raw.shape}")
 
-    # Auto-detect header rows (lines starting with non-digit) and delimiter
-    csv_header_rows = 0
-    csv_delimiter = None
-    with open(csv_file, "r", encoding="utf-8") as f:
-        for line in f:
-            if line[0].isdigit():
-                if len(line.split(",")) >= min_columns:
-                    csv_delimiter = ","
-                break
-            csv_header_rows += 1
+    if raw.shape[1] == 8:
+        return raw
 
-    raw = np.genfromtxt(
-        csv_file, delimiter=csv_delimiter, dtype=float,
-        skip_header=csv_header_rows,
-    )
-    if raw.ndim == 1:
-        raw = raw[np.newaxis, :]
-
-    data = np.empty((raw.shape[0], 8))
-    data[:, 0] = raw[:, id_frame]
-    data[:, 1] = raw[:, id_x] / scale_xy
-    data[:, 2] = raw[:, id_y] / scale_xy
-    data[:, 3] = raw[:, id_sigma_x] / scale_xy
-    data[:, 4] = raw[:, id_sigma_y] / scale_xy
-    data[:, 5] = raw[:, id_intensity]
-    data[:, 6] = raw[:, id_background]
-    data[:, 7] = raw[:, id_precision] / scale_pr
-
-    # For PEAKFIT, X/Y/sigma are in pixels; convert to sample-plane microns.
-    if fmt == "PEAKFIT":
+    if meta.get("csv_format", "").upper() == "PEAKFIT" and raw.shape[1] >= 14:
         pixel_size_sample = _pixel_size_sample(meta)
-        data[:, 1:5] *= pixel_size_sample
+        locs_2d_csv = np.empty((raw.shape[0], 8), dtype=float)
+        locs_2d_csv[:, 0] = raw[:, 0]                        # frame
+        locs_2d_csv[:, 1] = raw[:, 9]  * pixel_size_sample   # X (px -> um)
+        locs_2d_csv[:, 2] = raw[:, 10] * pixel_size_sample   # Y (px -> um)
+        locs_2d_csv[:, 3] = raw[:, 12] * pixel_size_sample   # sigma_X (px -> um)
+        locs_2d_csv[:, 4] = raw[:, 12] * pixel_size_sample   # sigma_Y (px -> um)
+        locs_2d_csv[:, 5] = raw[:, 8]                        # intensity (photons)
+        locs_2d_csv[:, 6] = raw[:, 7]                        # background (photons)
+        locs_2d_csv[:, 7] = raw[:, 13] / 1000.0              # precision (nm -> um)
+        return locs_2d_csv
 
-    return data
+    raise ValueError(
+        f"Unsupported localisation array shape {raw.shape}. "
+        "Expected standardized (N, 8) data or raw PEAKFIT columns."
+    )
 
 
 def center_localizations(locs_2d_csv: npt.NDArray[float]) -> npt.NDArray[float]:

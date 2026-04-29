@@ -1,0 +1,13 @@
+{
+  "image_size": [320, 320],
+  "n_coils": 15,
+  "n_samples": 6,
+  "acceleration_ratio": 8,
+  "acs_fraction": 0.04,
+  "mask_pattern": "random",
+  "mask_seed": 0,
+  "mask_orientation": "vertical",
+  "fft_normalization": "ortho",
+  "data_source": "fastMRI knee multicoil validation set",
+  "sensitivity_estimation": "ESPIRiT"
+}

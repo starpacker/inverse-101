@@ -13,7 +13,7 @@ docker build -t imaging101-sandbox -f evaluation_harness/Dockerfile .
 
 # 3. Run an evaluation
 python -m evaluation_harness run \
-    --task eht_black_hole \
+    --task eht_black_hole_original \
     --mode end_to_end \
     --model gpt-4o \
     --base-url https://api.openai.com/v1 \
@@ -47,7 +47,7 @@ Dockerfile      Sandbox image (Python 3.11 + numpy/scipy/matplotlib/pytest)
 Results are saved as JSON in `results/`:
 ```json
 {
-  "task_name": "eht_black_hole",
+  "task_name": "eht_black_hole_original",
   "mode": "end_to_end",
   "model": "gpt-4o",
   "tests_passed": 22,

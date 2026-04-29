@@ -1,0 +1,11 @@
+{
+    "baseline": [
+        {
+            "method": "GAP-HSICNN (GAP with HSI-SDeCNN plug-and-play denoiser, 20 outer iterations)",
+            "ncc_vs_ref": 0.9949,
+            "nrmse_vs_ref": 0.0217
+        }
+    ],
+    "ncc_boundary": 0.8954,
+    "nrmse_boundary": 0.0239
+}

@@ -31,9 +31,9 @@ def compute_metrics(estimate: np.ndarray, reference: np.ndarray) -> dict:
     # Flux normalization
     est *= ref.sum() / (est.sum() + 1e-30)
 
-    # NRMSE
+    # NRMSE (RMS error normalised by dynamic range of reference)
     nrmse = float(np.sqrt(np.mean((est - ref)**2))
-                  / (np.sqrt(np.mean(ref**2)) + 1e-30))
+                  / (ref.max() - ref.min() + 1e-30))
 
     # Normalized Cross-Correlation
     ncc = float(np.sum(est * ref)

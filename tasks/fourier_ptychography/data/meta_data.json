@@ -1,0 +1,16 @@
+{
+  "wavelength_m": 6.25e-07,
+  "NA": 0.1,
+  "magnification": 4.0,
+  "dxd_m": 6.5e-06,
+  "dxp_m": 1.625e-06,
+  "z_led_m": 0.06,
+  "led_pitch_m": 0.002,
+  "n_leds_side": 11,
+  "num_leds": 121,
+  "Nd": 256,
+  "No": 730,
+  "bit_depth": 10,
+  "operation_mode": "FPM",
+  "description": "Synthetic FPM dataset: USAF 1951 phase object (phi_max=pi/2), 11x11 LED array"
+}

@@ -34,7 +34,17 @@ def load_observation(data_dir: str = "data") -> np.ndarray:
     meta = load_metadata(data_dir)
 
     tiff_path = os.path.join(data_dir, "sample.tiff")
-    raw = tifffile.imread(tiff_path).astype(np.float64)
+    try:
+        raw = tifffile.imread(tiff_path).astype(np.float64)
+    except ValueError as exc:
+        msg = str(exc)
+        if "requires the 'imagecodecs' package" in msg:
+            raise RuntimeError(
+                "Reading sample.tiff requires the optional 'imagecodecs' "
+                "dependency because the file uses LZW compression. "
+                "Install it with `python -m pip install imagecodecs` and rerun."
+            ) from exc
+        raise
 
     tiff_scale = meta["tiff_scale"]
     ri_scale = meta["ri_contrast_scale"]
@@ -64,7 +74,7 @@ def load_metadata(data_dir: str = "data") -> dict:
         'ri_contrast_scale' : float        — RI contrast scaling factor
         'tiff_scale'        : float        — TIFF normalisation factor
     """
-    path = os.path.join(data_dir, "meta_data")
+    path = os.path.join(data_dir, "meta_data.json")
     with open(path, "r") as f:
         return json.load(f)
 

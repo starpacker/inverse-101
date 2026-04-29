@@ -1,0 +1,10 @@
+{
+  "image_size": 128,
+  "n_angles": 120,
+  "n_radial_bins": 128,
+  "count_level": 1000.0,
+  "randoms_fraction": 0.1,
+  "noise_model": "poisson",
+  "modality": "2D PET",
+  "angle_range_deg": 180.0
+}

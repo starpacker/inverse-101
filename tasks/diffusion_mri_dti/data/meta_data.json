@@ -1,0 +1,11 @@
+{
+  "image_size": 128,
+  "n_directions": 30,
+  "n_b0": 1,
+  "b_value_s_per_mm2": 1000.0,
+  "noise_sigma": 0.02,
+  "signal_model": "stejskal_tanner",
+  "modality": "diffusion-weighted MRI",
+  "field_of_view_mm": 220.0,
+  "pixel_size_mm": 1.71875
+}

@@ -21,8 +21,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 
-from src.preprocessing import prepare_data, load_ground_truth
-from src.solvers import DPISolver
+from src.preprocessing import prepare_data, load_ground_truthfrom src.solvers import DPISolver
 from src.visualization import (
     plot_posterior_summary,
     plot_posterior_samples,
@@ -36,7 +35,7 @@ from src.visualization import (
 def main():
     # ── Step 1: Load and preprocess observation data ──────────────────────
     print("Step 1: Loading and preprocessing observation data...")
-    (obs, obs_data, closure_indices, nufft_params,
+    (obs_data, closure_indices, nufft_params,
      prior_image, flux_const, metadata) = prepare_data("data")
 
     npix = metadata["npix"]
@@ -79,7 +78,7 @@ def main():
 
     # ── Step 4: Evaluate ─────────────────────────────────────────────────
     print("\nStep 4: Evaluating reconstruction quality...")
-    ground_truth = load_ground_truth("data", npix, fov_uas)
+    ground_truth = load_ground_truth("data")
 
     metrics = compute_metrics(posterior['mean'], ground_truth)
     uq_metrics = compute_uq_metrics(posterior['mean'], posterior['std'],
@@ -89,31 +88,33 @@ def main():
 
     # ── Step 5: Visualize and save ───────────────────────────────────────
     print("\nStep 5: Generating visualizations and saving outputs...")
-    os.makedirs("output", exist_ok=True)
+    os.makedirs("evaluation/reference_outputs", exist_ok=True)
 
     plot_posterior_summary(
         posterior['mean'], posterior['std'], posterior['samples'],
         ground_truth=ground_truth,
         pixel_size_uas=fov_uas / npix,
-        save_path="output/posterior_summary.png"
+        save_path="evaluation/reference_outputs/posterior_summary.png"
     )
     plot_posterior_samples(
         posterior['samples'], n_show=8,
         pixel_size_uas=fov_uas / npix,
-        save_path="output/posterior_samples.png"
+        save_path="evaluation/reference_outputs/posterior_samples.png"
     )
-    plot_loss_curves(result['loss_history'], save_path="output/loss_curves.png")
+    plot_loss_curves(result['loss_history'],
+                     save_path="evaluation/reference_outputs/loss_curves.png")
 
-    np.save("output/posterior_mean.npy", posterior['mean'])
-    np.save("output/posterior_std.npy", posterior['std'])
-    np.save("output/posterior_samples.npy", posterior['samples'][:100])
-    np.save("output/ground_truth.npy", ground_truth)
+    np.save("evaluation/reference_outputs/posterior_mean.npy", posterior['mean'])
+    np.save("evaluation/reference_outputs/posterior_std.npy", posterior['std'])
+    np.save("evaluation/reference_outputs/posterior_samples.npy",
+            posterior['samples'][:100])
+    np.save("evaluation/reference_outputs/ground_truth.npy", ground_truth)
 
     # Save metrics
-    with open("output/metrics.json", "w") as f:
+    with open("evaluation/reference_outputs/metrics.json", "w") as f:
         json.dump(uq_metrics, f, indent=2)
 
-    print("\nDone. Outputs saved to output/")
+    print("\nDone. Outputs saved to evaluation/reference_outputs/")
     return posterior, uq_metrics
 
 

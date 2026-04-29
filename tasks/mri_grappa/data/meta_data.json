@@ -1,0 +1,7 @@
+{
+  "image_shape": [128, 128],
+  "n_coils": 8,
+  "phantom": "Shepp-Logan",
+  "sensitivity_model": "Gaussian CSM",
+  "fft_normalization": "1/sqrt(N^2), centered (fftshift/ifftshift)"
+}

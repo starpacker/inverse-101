@@ -1,0 +1,12 @@
+{
+  "baseline": [
+    {
+      "method": "lstsq_grad (64 epochs)",
+      "ncc_vs_ref": 1.0,
+      "nrmse_vs_ref": 0.0,
+      "final_cost": 0.3276
+    }
+  ],
+  "ncc_boundary": 0.9,
+  "nrmse_boundary": 0.1
+}

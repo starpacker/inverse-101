@@ -1,0 +1,16 @@
+{
+  "image_size": [
+    128,
+    128
+  ],
+  "n_coils": 8,
+  "n_samples": 1,
+  "acceleration_ratio": 8,
+  "acs_fraction": 0.08,
+  "mask_pattern": "random",
+  "mask_seed": 0,
+  "mask_orientation": "vertical",
+  "fft_normalization": "ortho",
+  "data_source": "synthetic Shepp-Logan phantom with Gaussian coil maps",
+  "sensitivity_estimation": "analytic Gaussian model"
+}

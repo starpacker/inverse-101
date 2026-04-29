@@ -1,379 +1,300 @@
 """
-Visualization — Light Field Microscope Reconstruction Plots
-===========================================================
+Visualization Helpers for the Light-Field Microscope Task
+=========================================================
 
-Plotting utilities for LFM data and reconstruction results.
-All functions return matplotlib Figure objects for display in notebooks
-or saving to disk in main.py.
-
-Note: never call matplotlib.use() here — the backend is set only in main.py.
+These plotting and metric utilities support the current wave-optics USAF
+evaluation in `main.py` and the task notebook. Backend selection remains the
+responsibility of `main.py` or the notebook environment.
 """
 
-import numpy as np
+from __future__ import annotations
+
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+import numpy as np
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Raw Sensor Image
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def plot_lf_image(lf_image: np.ndarray,
-                  title: str = "Light Field Image") -> plt.Figure:
-    """
-    Display the raw 2D sensor image (light field measurement).
-
-    Parameters
-    ----------
-    lf_image : np.ndarray
-        2D float array of shape (imgH, imgW).
-    title : str
-
-    Returns
-    -------
-    plt.Figure
-    """
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    im = ax.imshow(lf_image, cmap="inferno", interpolation="nearest")
-    ax.set_title(title, fontsize=13)
-    ax.set_xlabel("Sensor X (px)")
-    ax.set_ylabel("Sensor Y (px)")
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    fig.tight_layout()
-    return fig
+def normalized_cross_correlation(estimate: np.ndarray, reference: np.ndarray) -> float:
+    """Compute cosine-style NCC between two arrays."""
+    est = np.asarray(estimate, dtype=np.float64).ravel()
+    ref = np.asarray(reference, dtype=np.float64).ravel()
+    denom = np.linalg.norm(est) * np.linalg.norm(ref)
+    if denom <= 0:
+        return 0.0
+    return float(np.dot(est, ref) / denom)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Volume Depth Slices
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def plot_volume_slices(volume: np.ndarray, depths: np.ndarray,
-                       title: str = "", vmax: float = None) -> plt.Figure:
-    """
-    Show XY lateral slices of a 3D volume at each depth plane.
-
-    Parameters
-    ----------
-    volume : np.ndarray
-        Shape (texH, texW, nDepths).
-    depths : np.ndarray
-        Depth values in μm, length nDepths.
-    title : str
-    vmax : float or None
-        Colormap upper limit; defaults to volume.max().
-
-    Returns
-    -------
-    plt.Figure
-    """
-    nd = volume.shape[2]
-    ncols = min(nd, 5)
-    nrows = int(np.ceil(nd / ncols))
-
-    if vmax is None:
-        vmax = float(volume.max())
-
-    fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols, 3 * nrows))
-    if nd == 1:
-        axes = np.array([[axes]])
-    axes = np.atleast_2d(axes)
-
-    for i in range(nd):
-        r, c = divmod(i, ncols)
-        ax = axes[r, c]
-        ax.imshow(volume[:, :, i], cmap="hot", vmin=0, vmax=vmax,
-                  interpolation="nearest")
-        ax.set_title(f"Δz = {depths[i]:.0f} μm", fontsize=10)
-        ax.axis("off")
-
-    # Hide unused axes
-    for i in range(nd, nrows * ncols):
-        r, c = divmod(i, ncols)
-        axes[r, c].axis("off")
-
-    if title:
-        fig.suptitle(title, fontsize=14, y=1.01)
-    fig.tight_layout()
-    return fig
+def normalized_root_mean_square_error(estimate: np.ndarray, reference: np.ndarray) -> float:
+    """Compute dynamic-range-normalized RMSE used by the evaluation harness."""
+    est = np.asarray(estimate, dtype=np.float64)
+    ref = np.asarray(reference, dtype=np.float64)
+    ref_range = float(np.max(ref) - np.min(ref))
+    if ref_range <= 0:
+        ref_range = 1.0
+    return float(np.sqrt(np.mean((est - ref) ** 2)) / ref_range)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Maximum Intensity Projections
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def plot_volume_mip(volume: np.ndarray, title: str = "") -> plt.Figure:
-    """
-    Show maximum-intensity projections: XY (top), XZ (side), YZ (front).
-
-    Parameters
-    ----------
-    volume : np.ndarray
-        Shape (texH, texW, nDepths).
-    title : str
-
-    Returns
-    -------
-    plt.Figure
-    """
-    mip_xy = volume.max(axis=2)
-    mip_xz = volume.max(axis=0)
-    mip_yz = volume.max(axis=1)
-
-    vmax = float(volume.max())
-
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-    axes[0].imshow(mip_xy, cmap="hot", vmin=0, vmax=vmax, interpolation="nearest")
-    axes[0].set_title("XY (max-z)")
-    axes[0].set_xlabel("X (vox)")
-    axes[0].set_ylabel("Y (vox)")
-
-    axes[1].imshow(mip_xz, cmap="hot", vmin=0, vmax=vmax, interpolation="nearest", aspect="auto")
-    axes[1].set_title("XZ (max-y)")
-    axes[1].set_xlabel("X (vox)")
-    axes[1].set_ylabel("Depth plane")
-
-    axes[2].imshow(mip_yz, cmap="hot", vmin=0, vmax=vmax, interpolation="nearest", aspect="auto")
-    axes[2].set_title("YZ (max-x)")
-    axes[2].set_xlabel("Y (vox)")
-    axes[2].set_ylabel("Depth plane")
-
-    if title:
-        fig.suptitle(title, fontsize=14)
-    fig.tight_layout()
-    return fig
+def compute_image_metrics(image_2d: np.ndarray, gt_2d: np.ndarray) -> dict:
+    image_2d = np.asarray(image_2d, dtype=np.float64)
+    gt_2d = np.asarray(gt_2d, dtype=np.float64)
+    diff = image_2d - gt_2d
+    mse = float(np.mean(diff ** 2))
+    ref_range = float(np.max(gt_2d) - np.min(gt_2d))
+    if ref_range <= 0:
+        ref_range = 1.0
+    nrmse = float(np.sqrt(mse) / ref_range)
+    data_range = float(max(np.max(gt_2d), np.max(image_2d)) - min(np.min(gt_2d), np.min(image_2d)))
+    if data_range <= 0:
+        data_range = 1.0
+    ssim = float(structural_similarity(gt_2d, image_2d, data_range=data_range))
+    psnr = float(peak_signal_noise_ratio(gt_2d, image_2d, data_range=data_range))
+    return {
+        "mse": mse,
+        "nrmse": nrmse,
+        "ssim": ssim,
+        "psnr": psnr,
+    }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Reconstruction Comparison
-# ═══════════════════════════════════════════════════════════════════════════════
+def compute_center_line_profile(
+    object_2d: np.ndarray,
+    tex_res_x_um: float,
+    margin_vox: int = 10,
+) -> dict:
+    center_row = int(object_2d.shape[0] // 2)
+    nonzero_cols = np.flatnonzero(object_2d[center_row] > 0)
+    if nonzero_cols.size == 0:
+        raise ValueError("Center row does not intersect the line-pair target.")
 
-def plot_reconstruction_comparison(gt: np.ndarray,
-                                    rl_vol: np.ndarray,
-                                    ems_vol: np.ndarray,
-                                    depths: np.ndarray,
-                                    metrics: dict = None) -> plt.Figure:
-    """
-    Side-by-side comparison: Ground Truth | RL (artifacts) | EMS (clean).
+    x0 = max(int(nonzero_cols.min()) - int(margin_vox), 0)
+    x1 = min(int(nonzero_cols.max()) + int(margin_vox) + 1, object_2d.shape[1])
+    sample_cols = np.arange(x0, x1, dtype=np.int32)
+    center_col = object_2d.shape[1] // 2
+    x_um = (sample_cols - center_col) * float(tex_res_x_um)
 
-    One row per depth plane, three columns.
+    return {
+        "row": center_row,
+        "x0": x0,
+        "x1": x1,
+        "x_um": x_um.astype(np.float32),
+    }
 
-    Parameters
-    ----------
-    gt : np.ndarray
-        Ground truth volume, shape (texH, texW, nDepths).
-    rl_vol : np.ndarray
-        Standard RL reconstruction (with artifacts).
-    ems_vol : np.ndarray
-        EMS reconstruction (artifact-free).
-    depths : np.ndarray
-        Depth values in μm.
-    metrics : dict or None
-        Optional dict with keys 'rl' and 'ems', each having 'nrmse' and 'psnr'.
 
-    Returns
-    -------
-    plt.Figure
-    """
-    nd = gt.shape[2]
-    vmax = float(gt.max())
+def extract_line_profile(image_2d: np.ndarray, profile_spec: dict) -> np.ndarray:
+    row = int(profile_spec["row"])
+    x0 = int(profile_spec["x0"])
+    x1 = int(profile_spec["x1"])
+    return np.asarray(image_2d[row, x0:x1], dtype=np.float32)
 
-    fig = plt.figure(figsize=(9, 2.5 * nd))
-    gs = gridspec.GridSpec(nd, 3, figure=fig, hspace=0.4, wspace=0.15)
 
-    col_titles = ["Ground Truth", "RL (artifacts)", "EMS (artifact-free)"]
-    cols = [gt, rl_vol, ems_vol]
+def normalize_profile(profile: np.ndarray) -> np.ndarray:
+    profile = np.asarray(profile, dtype=np.float32)
+    peak = float(np.max(profile))
+    if peak <= 0:
+        return np.zeros_like(profile)
+    return profile / peak
 
-    for row in range(nd):
-        for col_idx, (col_title, vol) in enumerate(zip(col_titles, cols)):
-            ax = fig.add_subplot(gs[row, col_idx])
-            ax.imshow(vol[:, :, row], cmap="hot", vmin=0, vmax=vmax,
-                      interpolation="nearest")
-            if row == 0:
-                ax.set_title(col_title, fontsize=11, fontweight="bold")
-            ax.set_ylabel(f"Δz={depths[row]:.0f}μm", fontsize=9)
+
+def compute_volume_slice_energy(volume: np.ndarray) -> np.ndarray:
+    """Sum the reconstructed energy in each axial slice of a volume."""
+    volume = np.asarray(volume, dtype=np.float64)
+    if volume.ndim != 3:
+        raise ValueError(f"Expected a 3D volume with shape (Y, X, Z), got {volume.shape}.")
+    return np.sum(np.clip(volume, 0.0, None), axis=(0, 1)).astype(np.float64)
+
+
+def _normalize_image_for_display(image_2d: np.ndarray) -> tuple[np.ndarray, float]:
+    image_2d = np.asarray(image_2d, dtype=np.float64)
+    peak = float(np.max(image_2d))
+    if peak <= 0:
+        return np.zeros_like(image_2d), 0.0
+    return image_2d / peak, peak
+
+
+def plot_light_field_usaf_comparison(cases: list, rl_iterations: int, title: str) -> plt.Figure:
+    fig, axes = plt.subplots(
+        len(cases),
+        5,
+        figsize=(21.0, 3.8 * len(cases)),
+        gridspec_kw={"width_ratios": [1.0, 1.0, 1.0, 1.0, 1.35]},
+        squeeze=False,
+    )
+
+    col_titles = [
+        "Ground Truth",
+        "Light Field Observation",
+        "Conventional Microscope",
+        f"RL Reconstruction\n({rl_iterations} iterations)",
+        "Line Profile\n(center row, across stripes)",
+    ]
+
+    for row_idx, case in enumerate(cases):
+        target_depth = case["target_depth_um"]
+        gt_disp, gt_peak = _normalize_image_for_display(case["gt_image"])
+        obs_disp, obs_peak = _normalize_image_for_display(case["observation"])
+        conv_disp, conv_peak = _normalize_image_for_display(case["conventional_image"])
+        rl_disp, rl_peak = _normalize_image_for_display(case["rl_image"])
+        profile_row = int(case["profile"]["row"])
+
+        image_panels = [
+            ("Ground Truth", gt_disp, gt_peak, None),
+            ("Light Field Observation", obs_disp, obs_peak, None),
+            ("Conventional Microscope", conv_disp, conv_peak, case["conventional"]),
+            ("RL Reconstruction", rl_disp, rl_peak, case["rl"]),
+        ]
+
+        for col_idx, (_, image, peak, metrics) in enumerate(image_panels):
+            ax = axes[row_idx, col_idx]
+            ax.imshow(image, cmap="inferno", vmin=0.0, vmax=1.0, interpolation="nearest")
+            ax.axhline(profile_row, color="cyan", linestyle="--", linewidth=1.0, alpha=0.9)
+            if row_idx == 0:
+                ax.set_title(col_titles[col_idx], fontsize=11, fontweight="bold")
+            if col_idx == 0:
+                ax.set_ylabel(f"z = {target_depth:.0f} um", fontsize=11)
             ax.set_xticks([])
             ax.set_yticks([])
 
-    # Metrics annotation
-    if metrics is not None:
-        rl_m = metrics.get("rl", {})
-        ems_m = metrics.get("ems", {})
-        note = (f"RL:  NRMSE={rl_m.get('nrmse', float('nan')):.4f},  "
-                f"PSNR={rl_m.get('psnr', float('nan')):.1f} dB\n"
-                f"EMS: NRMSE={ems_m.get('nrmse', float('nan')):.4f},  "
-                f"PSNR={ems_m.get('psnr', float('nan')):.1f} dB")
-        fig.text(0.5, 0.02, note, ha="center", fontsize=10,
-                 bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5))
+            note_lines = [f"peak={peak:.3g}"]
+            if metrics is not None:
+                note_lines.extend(
+                    [
+                        f"MSE={metrics['mse']:.4f}",
+                        f"SSIM={metrics['ssim']:.3f}",
+                        f"PSNR={metrics['psnr']:.2f}",
+                    ]
+                )
+            ax.text(
+                0.02,
+                0.03,
+                "\n".join(note_lines),
+                transform=ax.transAxes,
+                color="white",
+                fontsize=8.5,
+                ha="left",
+                va="bottom",
+                bbox={"boxstyle": "round,pad=0.25", "facecolor": "black", "alpha": 0.55},
+            )
 
-    fig.suptitle("LFM 3D Reconstruction: RL vs EMS", fontsize=13, fontweight="bold")
+        ax = axes[row_idx, 4]
+        profile = case["profile"]
+        ax.plot(profile["x_um"], profile["gt"], color="black", linewidth=1.8, label="GT")
+        ax.plot(profile["x_um"], profile["conventional"], color="tab:orange", linewidth=1.6, label="Conventional")
+        ax.plot(profile["x_um"], profile["rl"], color="tab:blue", linewidth=1.6, label="RL")
+        ax.set_xlim(float(profile["x_um"][0]), float(profile["x_um"][-1]))
+        ax.set_ylim(-0.05, 1.05)
+        ax.grid(True, alpha=0.25, linewidth=0.6)
+        if row_idx == 0:
+            ax.set_title(col_titles[4], fontsize=11, fontweight="bold")
+            ax.legend(loc="upper right", fontsize=8, frameon=False)
+        ax.set_xlabel("X (um)", fontsize=9)
+        ax.set_ylabel("Normalized intensity", fontsize=9)
+
+    fig.suptitle(title, fontsize=14, fontweight="bold", y=0.995)
+    fig.tight_layout(rect=[0, 0, 1, 0.975])
     return fig
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# USAF Target Comparison
-# ═══════════════════════════════════════════════════════════════════════════════
+def plot_volume_reconstruction_demo(
+    observation: np.ndarray,
+    gt_volume: np.ndarray,
+    reconstruction_volume: np.ndarray,
+    depths_um: np.ndarray,
+    target_depth_um: float,
+    title: str,
+) -> plt.Figure:
+    """Plot one observation, all axial slices, and the reconstructed axial energy."""
+    depths_um = np.asarray(depths_um, dtype=np.float64)
+    gt_volume = np.asarray(gt_volume, dtype=np.float64)
+    reconstruction_volume = np.asarray(reconstruction_volume, dtype=np.float64)
+    gt_energy = compute_volume_slice_energy(gt_volume)
+    reconstruction_energy = compute_volume_slice_energy(reconstruction_volume)
+    gt_energy_norm = gt_energy / max(float(gt_energy.sum()), 1e-30)
+    reconstruction_energy_norm = reconstruction_energy / max(float(reconstruction_energy.sum()), 1e-30)
 
-def plot_usaf_comparison(gt: np.ndarray,
-                          rl_vol: np.ndarray,
-                          ems_vol: np.ndarray,
-                          depth_idx: int,
-                          lf_image: np.ndarray = None,
-                          voxel_um: float = None,
-                          metrics: dict = None) -> plt.Figure:
-    """
-    Comparison figure for a USAF 1951 target: LF sensor image + reconstruction.
+    n_depths = int(depths_um.size)
+    fig, axes = plt.subplots(
+        2,
+        n_depths + 1,
+        figsize=(3.3 * (n_depths + 1), 6.8),
+        gridspec_kw={"width_ratios": [1.1] + [1.0] * n_depths},
+        squeeze=False,
+    )
 
-    Four-panel layout:
-      [LF sensor image] | [Ground Truth z-slice] | [RL z-slice] | [EMS z-slice]
+    obs_disp, obs_peak = _normalize_image_for_display(observation)
+    ax = axes[0, 0]
+    ax.imshow(obs_disp, cmap="inferno", vmin=0.0, vmax=1.0, interpolation="nearest")
+    ax.set_title("Light Field\nObservation", fontsize=11, fontweight="bold")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.text(
+        0.02,
+        0.03,
+        f"peak={obs_peak:.3g}",
+        transform=ax.transAxes,
+        color="white",
+        fontsize=8.5,
+        ha="left",
+        va="bottom",
+        bbox={"boxstyle": "round,pad=0.25", "facecolor": "black", "alpha": 0.55},
+    )
 
-    RL and EMS are each normalised to their own maximum so that structure is
-    visible even when artifacts push the absolute scale far above the GT.
-    Colorbars annotate the actual max value for each panel.
+    ax = axes[1, 0]
+    ax.plot(depths_um, gt_energy_norm, color="black", linewidth=1.8, marker="o", label="GT energy share")
+    ax.plot(
+        depths_um,
+        reconstruction_energy_norm,
+        color="tab:blue",
+        linewidth=1.8,
+        marker="o",
+        label="RL energy share",
+    )
+    ax.axvline(float(target_depth_um), color="tab:red", linestyle="--", linewidth=1.2, label="Target depth")
+    ax.set_xlabel("Depth (um)", fontsize=9)
+    ax.set_ylabel("Normalized slice energy", fontsize=9)
+    ax.set_ylim(-0.02, 1.02)
+    ax.grid(True, alpha=0.25, linewidth=0.6)
+    ax.legend(loc="upper left", fontsize=8, frameon=False)
 
-    Parameters
-    ----------
-    gt : np.ndarray
-        Ground truth volume, shape (texH, texW, nDepths).
-    rl_vol : np.ndarray
-        Standard RL reconstruction (with grid artifacts).
-    ems_vol : np.ndarray
-        EMS reconstruction (artifact-free).
-    depth_idx : int
-        Depth plane index to display.
-    lf_image : np.ndarray or None
-        Raw 2D sensor image (imgH, imgW); shown in the leftmost panel if given.
-    voxel_um : float or None
-        Voxel size in μm; used to compute spatial frequency labels.
-    metrics : dict or None
-        Optional dict with keys 'rl' and 'ems', each having 'nrmse' and 'psnr'.
+    for idx, depth_um in enumerate(depths_um):
+        gt_slice = gt_volume[:, :, idx]
+        reconstruction_slice = reconstruction_volume[:, :, idx]
+        gt_disp, gt_peak = _normalize_image_for_display(gt_slice)
+        rec_disp, rec_peak = _normalize_image_for_display(reconstruction_slice)
 
-    Returns
-    -------
-    plt.Figure
-    """
-    gt_sl  = gt[:, :, depth_idx]
-    rl_sl  = rl_vol[:, :, depth_idx]
-    ems_sl = ems_vol[:, :, depth_idx]
+        ax = axes[0, idx + 1]
+        ax.imshow(gt_disp, cmap="gray", vmin=0.0, vmax=1.0, interpolation="nearest")
+        ax.set_title(f"GT z={depth_um:.0f} um", fontsize=11, fontweight="bold")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.text(
+            0.02,
+            0.03,
+            f"share={gt_energy_norm[idx]:.2f}\npeak={gt_peak:.3g}",
+            transform=ax.transAxes,
+            color="white",
+            fontsize=8.5,
+            ha="left",
+            va="bottom",
+            bbox={"boxstyle": "round,pad=0.25", "facecolor": "black", "alpha": 0.55},
+        )
 
-    ncols = 4 if lf_image is not None else 3
-    fig, axes = plt.subplots(1, ncols, figsize=(4.5 * ncols, 4.8))
+        ax = axes[1, idx + 1]
+        ax.imshow(rec_disp, cmap="gray", vmin=0.0, vmax=1.0, interpolation="nearest")
+        ax.set_title(f"RL z={depth_um:.0f} um", fontsize=11, fontweight="bold")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.text(
+            0.02,
+            0.03,
+            f"share={reconstruction_energy_norm[idx]:.2f}\npeak={rec_peak:.3g}",
+            transform=ax.transAxes,
+            color="white",
+            fontsize=8.5,
+            ha="left",
+            va="bottom",
+            bbox={"boxstyle": "round,pad=0.25", "facecolor": "black", "alpha": 0.55},
+        )
 
-    col_idx = 0
-
-    # --- Panel 0: LF sensor image ---
-    if lf_image is not None:
-        ax = axes[col_idx]
-        im = ax.imshow(lf_image, cmap="inferno", interpolation="nearest")
-        ax.set_title("LF Sensor Image\n(7×7 lenslet mosaic)", fontsize=11, fontweight="bold")
-        ax.set_xlabel("Sensor X (px)", fontsize=9)
-        ax.set_ylabel("Sensor Y (px)", fontsize=9)
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        col_idx += 1
-
-    # --- Panel 1: Ground truth ---
-    ax = axes[col_idx]
-    im = ax.imshow(gt_sl, cmap="hot", vmin=0, vmax=1.0, interpolation="nearest")
-    ax.set_title("Ground Truth (z = 0 μm)", fontsize=11, fontweight="bold")
-    lbl = f"1 px = {voxel_um:.1f} μm" if voxel_um else "voxels"
-    ax.set_xlabel(f"X  ({lbl})", fontsize=9)
-    ax.set_ylabel(f"Y  ({lbl})", fontsize=9)
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-    # Bar-group frequency annotations (recomputed from voxel_um)
-    if voxel_um is not None:
-        freqs = [f"G1\n{1e3/(2*4*voxel_um):.0f}\nlp/mm",
-                 f"G2\n{1e3/(2*2*voxel_um):.0f}\nlp/mm",
-                 f"G3\n{1e3/(2*1*voxel_um):.0f}\nlp/mm"]
-    else:
-        freqs = ["G1", "G2", "G3"]
-    for x_pos, label in zip([2, 22, 31], freqs):
-        ax.text(x_pos, 0.5, label, color="cyan", fontsize=7, va="top", ha="left")
-    col_idx += 1
-
-    # --- Panel 2: RL ---
-    ax = axes[col_idx]
-    rl_max = float(rl_sl.max()) if rl_sl.max() > 0 else 1.0
-    im = ax.imshow(rl_sl / rl_max, cmap="hot", vmin=0, vmax=1.0, interpolation="nearest")
-    ax.set_title(f"RL (grid artifacts)\nmax = {rl_max:.2f}×GT", fontsize=11, fontweight="bold")
-    ax.set_xlabel(f"X  ({lbl})", fontsize=9)
-    ax.set_ylabel(f"Y  ({lbl})", fontsize=9)
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    col_idx += 1
-
-    # --- Panel 3: EMS ---
-    ax = axes[col_idx]
-    ems_max = float(ems_sl.max()) if ems_sl.max() > 0 else 1.0
-    im = ax.imshow(ems_sl / ems_max, cmap="hot", vmin=0, vmax=1.0, interpolation="nearest")
-    ax.set_title(f"EMS (artifact-free)\nmax = {ems_max:.2f}×GT", fontsize=11, fontweight="bold")
-    ax.set_xlabel(f"X  ({lbl})", fontsize=9)
-    ax.set_ylabel(f"Y  ({lbl})", fontsize=9)
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-    if metrics is not None:
-        rl_m  = metrics.get("rl", {})
-        ems_m = metrics.get("ems", {})
-        note = (f"RL:   NRMSE={rl_m.get('nrmse', float('nan')):.4f},  "
-                f"PSNR={rl_m.get('psnr', float('nan')):.1f} dB  |  "
-                f"EMS:  NRMSE={ems_m.get('nrmse', float('nan')):.4f},  "
-                f"PSNR={ems_m.get('psnr', float('nan')):.1f} dB")
-        fig.text(0.5, -0.02, note, ha="center", fontsize=10,
-                 bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5))
-
-    fig.suptitle("USAF 1951 Resolution Target — Light Field Microscopy (z = 0 μm)",
-                 fontsize=13, fontweight="bold", y=1.02)
-    fig.tight_layout()
+    fig.suptitle(title, fontsize=14, fontweight="bold", y=0.995)
+    fig.tight_layout(rect=[0, 0, 1, 0.965])
     return fig
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Metrics
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def compute_metrics(estimate: np.ndarray,
-                    ground_truth: np.ndarray) -> dict:
-    """
-    Compute NRMSE and PSNR of a 3D reconstruction against the ground truth.
-
-    Definitions
-    -----------
-    NRMSE = ||estimate - gt||_F / ||gt||_F
-    PSNR  = 20 · log10( max(gt) / RMSE )
-
-    Parameters
-    ----------
-    estimate : np.ndarray
-        Reconstructed volume.
-    ground_truth : np.ndarray
-        Reference volume (same shape).
-
-    Returns
-    -------
-    dict
-        {'nrmse': float, 'psnr': float}
-    """
-    diff = estimate.astype(float) - ground_truth.astype(float)
-    rmse = float(np.sqrt(np.mean(diff**2)))
-    gt_norm = float(np.linalg.norm(ground_truth))
-    nrmse = float(np.linalg.norm(diff)) / gt_norm if gt_norm > 0 else float("inf")
-    gt_max = float(ground_truth.max())
-    psnr = float(20 * np.log10(gt_max / rmse)) if (gt_max > 0 and rmse > 0) else float("inf")
-    return {"nrmse": nrmse, "psnr": psnr}
-
-
-def print_metrics_table(metrics: dict) -> None:
-    """
-    Print a formatted metrics table to stdout.
-
-    Parameters
-    ----------
-    metrics : dict
-        Keys are method names (e.g. 'rl', 'ems'); values are dicts with
-        'nrmse' and 'psnr' keys.
-    """
-    header = f"{'Method':<12}  {'NRMSE':>8}  {'PSNR (dB)':>10}"
-    print(header)
-    print("-" * len(header))
-    for method, m in metrics.items():
-        nrmse = m.get("nrmse", float("nan"))
-        psnr = m.get("psnr", float("nan"))
-        print(f"{method:<12}  {nrmse:>8.4f}  {psnr:>10.2f}")

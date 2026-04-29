@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "parallax-based 3D SMLM",
+      "median_lateral_err_nm": 51.8,
+      "median_axial_err_nm": 55.3
+    }
+  ],
+  "lateral_boundary_nm": 57.0,
+  "axial_boundary_nm": 61.0
+}

@@ -17,14 +17,22 @@ class LLMConfig:
     max_tokens: int = 32768
 
 
+# Valid end-to-end difficulty levels
+E2E_LEVELS = ("L1", "L2", "L3")
+
+
 @dataclass
 class TaskConfig:
     """Which task to evaluate and in what mode."""
 
-    task_name: str  # e.g. "eht_black_hole"
+    task_name: str  # e.g. "eht_black_hole_original"
     task_dir: Path = field(default_factory=Path)  # resolved at runtime
     mode: str = "end_to_end"  # "plan" | "function" | "end_to_end"
     target_function: str | None = None  # for function mode, e.g. "preprocessing.load_observation"
+    level: str = "L1"  # end-to-end difficulty level:
+    #   "L1" — task description only (README.md)
+    #   "L2" — task description + approach (README.md + plan/approach.md)
+    #   "L3" — task description + approach + design (README.md + plan/approach.md + plan/design.md)
 
 
 @dataclass
@@ -38,4 +46,4 @@ class RunConfig:
     timeout_seconds: int = 600
     output_dir: Path = field(default_factory=lambda: Path("results"))
     log_file: Path | None = None  # Path to save detailed interaction logs
-    framework: str = "react"  # "react" | "multi_agent"
+    framework: str = "react"  # "react" | "multi_agent" | "copilot" | "deepcode"

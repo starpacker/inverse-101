@@ -334,9 +334,9 @@ def generate_dataset(meta_data_path="data/meta_data",
     g_doppler = compute_doppler_factor(ray_data['r'], ray_data['theta'], Omega)
 
     # Generate ground truth hotspot
-    # True rotation axis: slight tilt from z-axis
-    true_rot_axis = np.array([np.sin(inclination), 0, np.cos(inclination)])
-    true_rot_axis = true_rot_axis / np.linalg.norm(true_rot_axis)
+    # True rotation axis: z-axis (orbital angular momentum direction).
+    # Inclination only affects the observer viewing angle (encoded in ray geometry).
+    true_rot_axis = np.array([0.0, 0.0, 1.0])
 
     print("Generating Gaussian hotspot emission...")
     emission_true = generate_gaussian_hotspot(
@@ -347,7 +347,11 @@ def generate_dataset(meta_data_path="data/meta_data",
     # Time frames
     t_frames = np.linspace(0, t_obs_M, n_frames).astype(np.float32)
     t_start_obs = 0.0
-    t_injection = 0.0
+    # Hotspot was injected long before observations begin.
+    # Setting t_injection = -r_observer ensures t_M > 0 everywhere (no masking).
+    # This follows the original bhnerf convention: t_injection = -float(geos.r_o).
+    r_observer = 1000.0
+    t_injection = -r_observer
 
     # Render ground truth movie
     print("Rendering ground truth movie...")
@@ -396,6 +400,7 @@ def generate_dataset(meta_data_path="data/meta_data",
         fov_M=np.float32(fov_M),
         t_start_obs=np.float32(t_start_obs),
         t_injection=np.float32(t_injection),
+        r_observer=np.float32(r_observer),
     )
     print("Done.")
 

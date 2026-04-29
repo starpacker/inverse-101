@@ -136,7 +136,8 @@ def plot_loss_history(losses: list, title: str = "Loss History",
     return fig
 
 
-def plot_measurements(measurements: np.ndarray, n_cols: int = 4,
+def plot_measurements(measurements: np.ndarray, n_cols: int = 8,
+                      illumination_rings: list = None,
                       figsize=None):
     """
     Plot the simulated intensity measurements for each illumination angle.
@@ -144,11 +145,25 @@ def plot_measurements(measurements: np.ndarray, n_cols: int = 4,
     Parameters
     ----------
     measurements : (n_angles, Ny, Nx) array
+    n_cols : int
+        Number of columns in the grid.
+    illumination_rings : list of dict, optional
+        Each entry: {"NA": float, "n_angles": int, "type": "BF" or "DF"}.
+        If provided, each image is labelled with its ring type and NA.
     """
     n_angles = measurements.shape[0]
     n_rows = (n_angles + n_cols - 1) // n_cols
     if figsize is None:
-        figsize = (3.5 * n_cols, 3.5 * n_rows)
+        figsize = (2.5 * n_cols, 2.5 * n_rows)
+
+    # Build per-angle labels
+    if illumination_rings is not None:
+        labels = []
+        for ring in illumination_rings:
+            for m in range(ring["n_angles"]):
+                labels.append(f"{ring['type']} NA={ring['NA']:.3f}\nAngle {m}")
+    else:
+        labels = [f"Angle {i}" for i in range(n_angles)]
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
     axes = np.atleast_2d(axes)
@@ -156,8 +171,7 @@ def plot_measurements(measurements: np.ndarray, n_cols: int = 4,
     for i in range(n_angles):
         r, c = divmod(i, n_cols)
         axes[r, c].imshow(measurements[i], cmap="gray", origin="lower")
-        theta_deg = 360.0 * i / n_angles
-        axes[r, c].set_title(f"Angle {i} ({theta_deg:.0f}°)", fontsize=9)
+        axes[r, c].set_title(labels[i], fontsize=7)
         axes[r, c].axis("off")
 
     # Hide unused axes
@@ -190,8 +204,8 @@ def compute_metrics(estimate: np.ndarray, ground_truth: np.ndarray) -> dict:
     gt = ground_truth.astype(np.float64)
     est = estimate.astype(np.float64)
 
-    # NRMSE
-    nrmse = np.linalg.norm(est - gt) / (np.linalg.norm(gt) + 1e-12)
+    # NRMSE (RMS error normalised by dynamic range of ground truth)
+    nrmse = np.sqrt(np.mean((est - gt)**2)) / (gt.max() - gt.min() + 1e-12)
 
     # Normalised cross-correlation
     gt_centered = gt - gt.mean()
@@ -213,6 +227,83 @@ def compute_metrics(estimate: np.ndarray, ground_truth: np.ndarray) -> dict:
         "ncc": float(ncc),
         "ssim": float(ssim_mean),
     }
+
+
+def plot_illumination_angles(illumination_rings: list, NA_obj: float,
+                             figsize=(6, 6)) -> "plt.Figure":
+    """
+    Visualise the illumination angle distribution in the pupil plane.
+
+    Each illumination angle is drawn as a dot at position
+    (NA·cos θ, NA·sin θ).  The objective pupil boundary is shown as a
+    dashed circle at NA_obj.  BF angles (NA < NA_obj) fall inside the
+    pupil; DF angles (NA > NA_obj) fall outside.
+
+    Parameters
+    ----------
+    illumination_rings : list of dict
+        Each entry: {"NA": float, "n_angles": int, "type": "BF" or "DF"}.
+    NA_obj : float
+        Objective numerical aperture (pupil boundary).
+    figsize : tuple
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Color palette: BF shades of blue, DF shades of red
+    bf_rings = [r for r in illumination_rings if r["type"] == "BF"]
+    df_rings = [r for r in illumination_rings if r["type"] == "DF"]
+
+    bf_colors = plt.cm.Blues(np.linspace(0.45, 0.85, max(len(bf_rings), 1)))
+    df_colors = plt.cm.Reds(np.linspace(0.45, 0.85, max(len(df_rings), 1)))
+
+    color_map = {}
+    for i, r in enumerate(bf_rings):
+        color_map[id(r)] = bf_colors[i]
+    for i, r in enumerate(df_rings):
+        color_map[id(r)] = df_colors[i]
+
+    for ring in illumination_rings:
+        na = ring["NA"]
+        n_ang = ring["n_angles"]
+        angles = 2.0 * np.pi * np.arange(n_ang) / n_ang
+        kx = na * np.cos(angles)
+        ky = na * np.sin(angles)
+        color = color_map[id(ring)]
+        label = f"{ring['type']}  NA={na:.3f}  ({n_ang} angles)"
+        ax.scatter(kx, ky, s=60, color=color, label=label, zorder=3)
+
+    # Objective pupil boundary
+    theta = np.linspace(0, 2 * np.pi, 360)
+    ax.plot(NA_obj * np.cos(theta), NA_obj * np.sin(theta),
+            "k--", lw=1.5, label=f"Objective pupil  NA={NA_obj}")
+
+    # Shade BF region
+    from matplotlib.patches import Circle
+    bf_patch = Circle((0, 0), NA_obj, color="steelblue", alpha=0.07, zorder=0)
+    ax.add_patch(bf_patch)
+
+    # Annotations
+    ax.text(0, NA_obj * 0.45, "BF\nregion", ha="center", va="center",
+            fontsize=9, color="steelblue", alpha=0.7)
+    ax.text(0, (NA_obj + max(r["NA"] for r in illumination_rings)) / 2,
+            "DF\nregion", ha="center", va="center",
+            fontsize=9, color="firebrick", alpha=0.7)
+
+    na_max = max(r["NA"] for r in illumination_rings) * 1.15
+    ax.set_xlim(-na_max, na_max)
+    ax.set_ylim(-na_max, na_max)
+    ax.set_aspect("equal")
+    ax.set_xlabel("NA$_x$ = sin θ$_x$", fontsize=11)
+    ax.set_ylabel("NA$_y$ = sin θ$_y$", fontsize=11)
+    ax.set_title("Illumination Angle Distribution (Pupil Plane)", fontsize=12)
+    ax.legend(loc="upper right", fontsize=8, framealpha=0.9)
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    return fig
 
 
 def print_metrics_table(metrics: dict) -> None:

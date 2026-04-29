@@ -42,33 +42,52 @@ class LLMClient:
         body: dict[str, Any] = {
             "model": self.config.model,
             "messages": messages,
-            "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
         }
+        # kimi-k2.5 only accepts temperature=1; omit it entirely for that model
+        if "kimi" not in self.config.model.lower():
+            body["temperature"] = self.config.temperature
         if stop:
             body["stop"] = stop
 
-        # Retry with exponential backoff (handles transient 404s, 429s, 502s, etc.)
-        max_retries = 8
+        # Retry with exponential backoff (handles transient errors, rate limits, etc.)
+        # Generous retry budget: serial execution means we can afford to wait.
+        max_retries = 12
         for attempt in range(max_retries):
             try:
                 resp = requests.post(url, headers=headers, json=body, timeout=600)
                 if resp.status_code != 200:
                     log.error("LLM API error %d: %s", resp.status_code, resp.text[:500])
-                # Retry on transient server/rate-limit errors
-                if resp.status_code in (429, 502, 503, 504) or (resp.status_code == 404 and attempt < max_retries - 1):
-                    wait = min(5 * (2 ** attempt), 120)  # 5, 10, 20, 40, 80, 120, 120, 120
-                    log.warning("Retryable HTTP %d, retrying in %d s… (attempt %d/%d)",
+                # Retry on transient server/rate-limit errors (including 400 from gateway overload)
+                retryable = resp.status_code in (400, 429, 500, 502, 503, 504)
+                # Also retry 404 (sometimes gateway flakes) but not on last attempt
+                retryable = retryable or (resp.status_code == 404 and attempt < max_retries - 1)
+                if retryable:
+                    wait = min(10 * (2 ** attempt), 300)  # 10, 20, 40, 80, 160, 300, 300…
+                    log.warning("Retryable HTTP %d, waiting %d s… (attempt %d/%d)",
                                 resp.status_code, wait, attempt + 1, max_retries)
                     time.sleep(wait)
+                    if attempt == max_retries - 1:
+                        raise RuntimeError(
+                            f"LLM request failed after {max_retries} retries: HTTP {resp.status_code}\n"
+                            f"Last response: {resp.text[:500]}"
+                        )
                     continue
                 resp.raise_for_status()
                 data = resp.json()
                 break
+            except requests.exceptions.Timeout as exc:
+                if attempt < max_retries - 1:
+                    wait = min(30 * (2 ** attempt), 300)
+                    log.warning("LLM request timed out, waiting %d s… (attempt %d/%d)",
+                                wait, attempt + 1, max_retries)
+                    time.sleep(wait)
+                else:
+                    raise RuntimeError(f"LLM request timed out after {max_retries} retries") from exc
             except (requests.RequestException, ValueError) as exc:
                 if attempt < max_retries - 1:
-                    wait = min(5 * (2 ** attempt), 120)
-                    log.warning("LLM request failed (%s), retrying in %d s… (attempt %d/%d)",
+                    wait = min(10 * (2 ** attempt), 300)
+                    log.warning("LLM request failed (%s), waiting %d s… (attempt %d/%d)",
                                 exc, wait, attempt + 1, max_retries)
                     time.sleep(wait)
                 else:
