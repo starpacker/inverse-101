@@ -17,6 +17,36 @@ docker build -t imaging101-sandbox -f evaluation_harness/Dockerfile .
 
 Docker is recommended. Without Docker, the harness uses a local temporary workspace.
 
+## Task Environments
+
+Each benchmark task can declare its own dependencies in `tasks/<task>/requirements.txt`. Real evaluation runs install those dependencies inside the sandbox automatically:
+
+| Runner | Dependency behavior |
+| --- | --- |
+| Docker | Installs task requirements inside the container |
+| Local fallback | Creates a temporary venv in the run workspace and installs task requirements |
+
+Use `check-env` when you want to inspect a task before running it:
+
+```bash
+python -m evaluation_harness check-env --task ct_fan_beam
+python -m evaluation_harness check-env --task ct_fan_beam --json
+```
+
+Use `setup-env` when you want a reusable local venv for debugging outside the harness:
+
+```bash
+python -m evaluation_harness setup-env --task ct_fan_beam --venv .venvs/ct_fan_beam
+```
+
+Preview the exact commands without installing anything:
+
+```bash
+python -m evaluation_harness setup-env --task ct_fan_beam --dry-run
+```
+
+The environment report classifies tasks into three tiers: Tier 1 standard pip environments, Tier 2 specialized Python packages, and Tier 3 tasks with explicit environment files such as `Dockerfile`, `environment.yml`, or `ENVIRONMENT.md`.
+
 ## Common Arguments
 
 | Argument | Required | Description |

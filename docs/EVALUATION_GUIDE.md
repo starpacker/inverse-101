@@ -36,6 +36,30 @@ python -m evaluation_harness run \
   --dry-run
 ```
 
+## Environment Preflight
+
+Task-specific packages live in `tasks/<task>/requirements.txt`. A real harness run installs them automatically in the sandbox, so users do not have to put every task dependency into the main Python environment.
+
+Before a run, inspect the task environment:
+
+```bash
+python -m evaluation_harness check-env --task ct_fan_beam
+```
+
+For scripts and CI:
+
+```bash
+python -m evaluation_harness check-env --task ct_fan_beam --json
+```
+
+For repeated manual debugging:
+
+```bash
+python -m evaluation_harness setup-env --task ct_fan_beam --venv .venvs/ct_fan_beam
+```
+
+If `check-env` reports Tier 3, read the task-specific environment files before running. These tasks may need a custom Docker image, conda environment, GPU package, or external system dependency.
+
 ## Mechanism 1: Planning
 
 Planning evaluation measures whether a model can write a scientifically correct algorithm plan and code design.

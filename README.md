@@ -78,6 +78,38 @@ docker build -t imaging101-sandbox -f evaluation_harness/Dockerfile .
 
 If Docker is unavailable, the harness falls back to a local temporary workspace.
 
+## Environment Handling
+
+You do not need to install every task package into your main Python environment. During a real `run`, the harness installs `tasks/<task>/requirements.txt` inside the Docker sandbox; without Docker, it creates an isolated local workspace and venv for that run.
+
+For a quick preflight before spending tokens:
+
+```bash
+python -m evaluation_harness check-env --task ct_fan_beam
+```
+
+For machine-readable automation:
+
+```bash
+python -m evaluation_harness check-env --task ct_fan_beam --json
+```
+
+For manual debugging or repeated local experiments, create a reusable task venv:
+
+```bash
+python -m evaluation_harness setup-env --task ct_fan_beam --venv .venvs/ct_fan_beam
+```
+
+Use `--dry-run` to print the setup commands without installing packages.
+
+Environment tiers:
+
+| Tier | Meaning | What to do |
+| --- | --- | --- |
+| Tier 1 | Standard pip dependencies such as NumPy/SciPy/Matplotlib | Run normally |
+| Tier 2 | Additional or specialized Python packages | Run `check-env`; use Docker or `setup-env` if needed |
+| Tier 3 | Task-specific environment files such as `Dockerfile`, `environment.yml`, or `ENVIRONMENT.md` | Read the task notes before running |
+
 ## Examples
 
 ### Planning

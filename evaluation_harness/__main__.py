@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .config import LLMConfig, RunConfig, TaskConfig
+from .env_manager import check_task_environment, setup_task_environment
 from .runner import BenchmarkRunner
 
 
@@ -153,6 +154,35 @@ def main(argv: list[str] | None = None) -> None:
     sum_p.add_argument("--dir", required=True, help="Path to function-mode run dir (e.g. results/function_mode/task/model_date)")
     sum_p.add_argument("--verbose", "-v", action="store_true")
 
+    # --- check-env subcommand ---
+    check_p = sub.add_parser(
+        "check-env",
+        help="Check a task's Python dependency environment without installing packages",
+    )
+    check_p.add_argument("--task", required=True, help="Task name under tasks/")
+    check_p.add_argument("--python", default="python", help="Python executable to report")
+    check_p.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    check_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="Return non-zero if required packages are missing from the current Python environment",
+    )
+
+    # --- setup-env subcommand ---
+    setup_p = sub.add_parser(
+        "setup-env",
+        help="Create a local virtual environment and install a task's requirements",
+    )
+    setup_p.add_argument("--task", required=True, help="Task name under tasks/")
+    setup_p.add_argument(
+        "--venv",
+        default=None,
+        help="Virtual environment directory (default: .venvs/<task>)",
+    )
+    setup_p.add_argument("--python", default="python", help="Python executable for venv creation")
+    setup_p.add_argument("--force", action="store_true", help="Recreate the venv if it already exists")
+    setup_p.add_argument("--dry-run", action="store_true", help="Print setup commands without running them")
+
     args = parser.parse_args(argv)
 
     if args.command == "prepare":
@@ -163,6 +193,10 @@ def main(argv: list[str] | None = None) -> None:
         _handle_run(args)
     elif args.command == "summarize":
         _handle_summarize(args)
+    elif args.command == "check-env":
+        _handle_check_env(args)
+    elif args.command == "setup-env":
+        _handle_setup_env(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -634,6 +668,82 @@ def _handle_summarize(args) -> None:
         print(f"  {mod:<20} {info['tests_passed']}/{info['tests_total']:<7} {rate:<10} {info['iterations']:<8} {info['stopped_reason']}")
     print("=" * 60)
     print(f"\nSaved to: {out}")
+
+
+def _handle_check_env(args) -> None:
+    """Check task dependencies and print actionable setup guidance."""
+    repo_root = Path(__file__).resolve().parent.parent
+    report = check_task_environment(repo_root, args.task, args.python)
+
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        _print_env_report(report)
+
+    if report.get("status") != "ok":
+        sys.exit(1)
+    if args.strict and report.get("missing_packages"):
+        sys.exit(1)
+
+
+def _handle_setup_env(args) -> None:
+    """Create a local virtual environment for a task."""
+    repo_root = Path(__file__).resolve().parent.parent
+    task_dir = repo_root / "tasks" / args.task
+    if not task_dir.exists():
+        print(f"Error: task not found: {args.task}", file=sys.stderr)
+        sys.exit(1)
+
+    venv_dir = Path(args.venv) if args.venv else Path(".venvs") / args.task
+    result = setup_task_environment(
+        task_dir,
+        venv_dir,
+        args.python,
+        dry_run=args.dry_run,
+        force=args.force,
+    )
+
+    if args.dry_run:
+        print("Dry run: environment setup commands")
+        for command in result["commands"]:
+            print(f"  {command}")
+        return
+
+    if result["status"] != "ok":
+        print(f"Error: {result.get('error', 'environment setup failed')}", file=sys.stderr)
+        for item in result.get("completed", []):
+            print(f"\n$ {item['command']}", file=sys.stderr)
+            if item.get("stderr"):
+                print(item["stderr"], file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Environment ready: {result['venv']}")
+
+
+def _print_env_report(report: dict) -> None:
+    """Pretty-print the environment report for humans."""
+    if report.get("status") != "ok":
+        print(f"Environment check failed: {report.get('error')}")
+        return
+
+    print("Environment check")
+    print(f"task: {report['task']}")
+    print(f"tier: {report['tier']}")
+    print(f"requirements: {report['requirements_file'] or '(none)'}")
+    if report["environment_files"]:
+        print("task environment files: " + ", ".join(report["environment_files"]))
+
+    packages = [pkg for pkg in report["packages"] if pkg["kind"] == "package"]
+    missing = report["missing_packages"]
+    print(f"packages: {len(packages)} checked, {len(missing)} missing in current Python")
+    if missing:
+        print("missing: " + ", ".join(missing))
+    if report["unchecked_requirements"]:
+        print("unchecked requirement lines: " + ", ".join(report["unchecked_requirements"]))
+
+    print("recommended setup:")
+    for recommendation in report["recommendations"]:
+        print(f"  {recommendation}")
 
 
 if __name__ == "__main__":
