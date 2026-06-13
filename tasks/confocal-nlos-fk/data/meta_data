@@ -1,0 +1,12 @@
+{
+  "wall_size": 2.0,
+  "bin_resolution": 3.2e-11,
+  "c": 300000000.0,
+  "n_spatial": 128,
+  "n_time": 2048,
+  "n_time_crop": 512,
+  "range_m": 19.6608,
+  "depth_range_m": 9.8304,
+  "scene": "outdoor_building",
+  "description": "Real confocal NLOS measurements of an outdoor building scene. 128\u00d7128 scan, 2m\u00d72m relay wall, 32ps bins, 10 min exposure."
+}

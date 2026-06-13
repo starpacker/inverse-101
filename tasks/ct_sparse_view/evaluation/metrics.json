@@ -1,0 +1,18 @@
+{
+  "baseline": [
+    {
+      "method": "FBP (30 sparse views)",
+      "ncc_vs_ref": 0.8139,
+      "nrmse_vs_ref": 0.1829,
+      "ssim": 0.1634
+    },
+    {
+      "method": "TV-PDHG (30 sparse views, lam=0.01, 300 iter)",
+      "ncc_vs_ref": 0.9659,
+      "nrmse_vs_ref": 0.0686,
+      "ssim": 0.4325
+    }
+  ],
+  "ncc_boundary": 0.8693,
+  "nrmse_boundary": 0.0755
+}

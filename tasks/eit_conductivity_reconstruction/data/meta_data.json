@@ -1,0 +1,86 @@
+{
+  "experiments": {
+    "bp": {
+      "n_el": 16,
+      "h0": 0.1,
+      "dist_exc": 1,
+      "step_meas": 1,
+      "anomaly": [
+        {
+          "center": [
+            0.5,
+            0.5
+          ],
+          "r": 0.1,
+          "perm": 10.0
+        }
+      ],
+      "background": 1.0,
+      "solver_weight": "none"
+    },
+    "greit": {
+      "n_el": 16,
+      "h0": 0.1,
+      "dist_exc": 1,
+      "step_meas": 1,
+      "anomaly": [
+        {
+          "center": [
+            0.4,
+            0.0
+          ],
+          "r": 0.1,
+          "perm": 10.0
+        },
+        {
+          "center": [
+            -0.4,
+            0.0
+          ],
+          "r": 0.1,
+          "perm": 10.0
+        },
+        {
+          "center": [
+            0.0,
+            0.5
+          ],
+          "r": 0.1,
+          "perm": 0.1
+        },
+        {
+          "center": [
+            0.0,
+            -0.5
+          ],
+          "r": 0.1,
+          "perm": 0.1
+        }
+      ],
+      "background": 1.0,
+      "solver_p": 0.5,
+      "solver_lamb": 0.01,
+      "solver_n": 32
+    },
+    "jac_dynamic": {
+      "n_el": 16,
+      "h0": 0.1,
+      "dist_exc": 8,
+      "step_meas": 1,
+      "anomaly": [
+        {
+          "center": [
+            0.5,
+            0.5
+          ],
+          "r": 0.1,
+          "perm": 1000.0
+        }
+      ],
+      "background": 1.0,
+      "solver_p": 0.5,
+      "solver_lamb": 0.01,
+      "solver_method": "kotre"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "baseline": [
+    {
+      "method": "FBP full-scan (360 deg)",
+      "ncc_vs_ref": 0.6518,
+      "nrmse_vs_ref": 0.1929
+    },
+    {
+      "method": "FBP short-scan with Parker weighting",
+      "ncc_vs_ref": 0.5578,
+      "nrmse_vs_ref": 0.211
+    },
+    {
+      "method": "TV-PDHG short-scan",
+      "ncc_vs_ref": 0.9661,
+      "nrmse_vs_ref": 0.0855
+    }
+  ],
+  "ncc_boundary": 0.8695,
+  "nrmse_boundary": 0.0941
+}

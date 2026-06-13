@@ -1,0 +1,12 @@
+{
+    "baseline": [
+        {
+            "method": "f-k (Stolt) migration with coherent compounding",
+            "ncc_vs_ref": 1.0,
+            "nrmse_vs_ref": 0.0,
+            "time_s": 19.6
+        }
+    ],
+    "ncc_boundary": 0.9,
+    "nrmse_boundary": 0.1
+}

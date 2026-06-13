@@ -1,0 +1,15 @@
+{
+  "baseline": [
+    {
+      "method": "Differentiable deflectometry with LM optimization (Wang et al. 2021)",
+      "ncc_vs_ref": 0.999802,
+      "nrmse_vs_ref": 0.038696,
+      "relative_error_surface_0_roc": 0.0696,
+      "relative_error_surface_1_roc": 0.0146,
+      "relative_error_thickness": 0.0945
+    }
+  ],
+  "ncc_boundary": 0.899822,
+  "nrmse_boundary": 0.042566,
+  "nrmse_definition": "NRMSE is computed over the 3-element parameter vector [surface_0_roc_mm, surface_1_roc_mm, thickness_mm], normalised by the dynamic range of the ground truth vector."
+}

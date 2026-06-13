@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "PnP-ADMM (RealSN-DnCNN sigma=15, alpha=2.0, 100 iters, Random 30% mask)",
+      "ncc_vs_ref": 0.9949,
+      "nrmse_vs_ref": 0.0332
+    }
+  ],
+  "ncc_boundary": 0.8954,
+  "nrmse_boundary": 0.0365
+}

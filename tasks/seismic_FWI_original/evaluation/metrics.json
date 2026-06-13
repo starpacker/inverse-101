@@ -1,0 +1,9 @@
+{
+  "baseline": [
+    {
+      "method": "FWI gradient descent (deepwave, 800 epochs)",
+      "velocity_nrmse": 0.0733
+    }
+  ],
+  "velocity_nrmse_boundary": 0.081
+}

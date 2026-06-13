@@ -1,0 +1,20 @@
+{
+  "baseline": [
+    {
+      "method": "OLS tensor fit",
+      "ncc_vs_ref": 0.9978,
+      "nrmse_vs_ref": 0.0613,
+      "ncc_md": 0.9993,
+      "nrmse_md": 0.0135
+    },
+    {
+      "method": "WLS tensor fit",
+      "ncc_vs_ref": 0.998,
+      "nrmse_vs_ref": 0.0585,
+      "ncc_md": 0.9993,
+      "nrmse_md": 0.0134
+    }
+  ],
+  "ncc_boundary": 0.8982,
+  "nrmse_boundary": 0.0643
+}

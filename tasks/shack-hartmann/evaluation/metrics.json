@@ -1,0 +1,18 @@
+{
+  "baseline": [
+    {
+      "method": "Weighted-centroid slope estimation + Tikhonov reconstruction (rcond=1e-3)",
+      "ncc_wfe_50nm":    0.9960,
+      "nrmse_wfe_50nm":  0.0836,
+      "ncc_wfe_100nm":   0.9843,
+      "nrmse_wfe_100nm": 0.0706,
+      "ncc_wfe_200nm":   0.9745,
+      "nrmse_wfe_200nm": 0.0714,
+      "ncc_wfe_400nm":   0.8642,
+      "nrmse_wfe_400nm": 0.0752,
+      "reconstruction_time_s": 0.072
+    }
+  ],
+  "ncc_boundary": 0.8,
+  "nrmse_boundary": 0.09
+}

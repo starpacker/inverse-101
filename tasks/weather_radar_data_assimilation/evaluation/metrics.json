@@ -1,0 +1,7 @@
+{
+    "baseline": [
+        {"method": "FlowDAS (flow-based data assimilation, MC=25, 500 EM steps)", "ncc_vs_ref": 0.8706, "nrmse_vs_ref": 0.0514}
+    ],
+    "ncc_boundary": 0.7835,
+    "nrmse_boundary": 0.0565
+}

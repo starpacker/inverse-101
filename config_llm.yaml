@@ -1,0 +1,14 @@
+# Example OpenAI-compatible model configuration.
+# Do not commit real API keys.
+
+"gpt-4o":
+  api_type: "openai"
+  base_url: "https://api.openai.com/v1"
+  api_key: "YOUR_API_KEY"
+  temperature: 0.2
+
+"my-gateway-model":
+  api_type: "openai"
+  base_url: "https://your-api-gateway.example/v1"
+  api_key: "YOUR_API_KEY"
+  temperature: 0.2

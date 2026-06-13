@@ -1,0 +1,24 @@
+{
+  "n_channels": 5,
+  "channels": [
+    "geopotential",
+    "temperature",
+    "humidity",
+    "wind_u",
+    "wind_v"
+  ],
+  "channel_units": [
+    "m^2/s^2",
+    "K",
+    "kg/kg",
+    "m/s",
+    "m/s"
+  ],
+  "grid_height": 64,
+  "grid_width": 32,
+  "history_len": 10,
+  "ass_T": 5,
+  "longitude_resolution_deg": 5.625,
+  "latitude_resolution_deg": 5.625,
+  "dataset_source": "ERA5 reanalysis (Copernicus Climate Change Service); train/val/test split from Yang et al. 2025"
+}

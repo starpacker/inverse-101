@@ -1,0 +1,18 @@
+{
+  "image_size": 128,
+  "n_angles": 180,
+  "energy_range_keV": [
+    20,
+    150
+  ],
+  "energy_bin_keV": 1.0,
+  "low_energy_peak_keV": 55,
+  "high_energy_peak_keV": 90,
+  "n_materials": 2,
+  "material_names": [
+    "tissue",
+    "bone"
+  ],
+  "pixel_size_cm": 0.1,
+  "description": "Synthetic dual-energy CT with polychromatic spectra and Poisson noise"
+}

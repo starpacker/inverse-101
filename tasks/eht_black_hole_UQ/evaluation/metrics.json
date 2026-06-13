@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "DPI (normalizing flow)",
+      "ncc": 0.657,
+      "nrmse": 0.135
+    }
+  ],
+  "ncc_boundary": 0.591,
+  "nrmse_boundary": 0.149
+}

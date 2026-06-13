@@ -1,0 +1,22 @@
+{
+  "Vis RML (cal)": {
+    "nrmse": 0.176,
+    "ncc": 0.9849,
+    "dynamic_range": 45.4908
+  },
+  "Vis RML (corrupt)": {
+    "nrmse": 8.4007,
+    "ncc": 0.0001,
+    "dynamic_range": 52.8763
+  },
+  "Closure-only (cal)": {
+    "nrmse": 0.9002,
+    "ncc": 0.661,
+    "dynamic_range": 17.6099
+  },
+  "Closure-only (corrupt)": {
+    "nrmse": 0.9385,
+    "ncc": 0.6285,
+    "dynamic_range": 16.2886
+  }
+}

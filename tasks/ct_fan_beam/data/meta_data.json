@@ -1,0 +1,13 @@
+{
+  "image_size": 128,
+  "n_det": 192,
+  "n_angles_full": 180,
+  "n_angles_short": 116,
+  "source_to_isocenter_pixels": 256.0,
+  "isocenter_to_detector_pixels": 256.0,
+  "noise_sigma_relative": 0.02,
+  "fan_half_angle_deg": 26.445560673538605,
+  "short_scan_range_deg": 232.8911213470772,
+  "modality": "fan-beam CT",
+  "detector_type": "flat"
+}

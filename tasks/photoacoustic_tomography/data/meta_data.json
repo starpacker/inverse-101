@@ -1,0 +1,13 @@
+{
+  "sound_speed_m_per_s": 1484.0,
+  "sampling_frequency_hz": 20000000.0,
+  "aperture_length_m": 0.02,
+  "detector_pitch_m": 0.0006666666666666666,
+  "detector_size_m": 0.002,
+  "num_subdetectors": 25,
+  "target_plane_z_m": 0.015,
+  "num_detectors_x": 31,
+  "num_detectors_y": 31,
+  "num_targets": 4,
+  "target_info_description": "Each row: [x_m, y_m, z_m, radius_m]"
+}

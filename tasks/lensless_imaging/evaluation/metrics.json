@@ -1,0 +1,12 @@
+{
+  "baseline": [
+    {
+      "method": "ADMM (300 iters, mu1=1e-6, mu2=1e-5, mu3=4e-5, tau=1e-4)",
+      "ncc_vs_ref": 1.0,
+      "nrmse_vs_ref": 0.0,
+      "reprojection_nrmse": 0.660
+    }
+  ],
+  "ncc_boundary": 0.9,
+  "nrmse_boundary": 0.1
+}

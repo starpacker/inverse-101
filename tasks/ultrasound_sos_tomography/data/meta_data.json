@@ -1,0 +1,12 @@
+{
+  "image_size": 128,
+  "n_angles": 60,
+  "n_angles_full": 180,
+  "noise_std": 0.01,
+  "n_detectors": 128,
+  "angle_range_deg": 180.0,
+  "pixel_size_mm": 0.5,
+  "background_sos_m_per_s": 1500.0,
+  "ring_radius_mm": 50.0,
+  "seed": 42
+}

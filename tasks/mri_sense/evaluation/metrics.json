@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "CG-SENSE (R=4, 16-line ACS, 8 coils, Shepp-Logan phantom)",
+      "ncc_vs_ref": 0.9878,
+      "nrmse_vs_ref": 0.0572
+    }
+  ],
+  "ncc_boundary": 0.8890,
+  "nrmse_boundary": 0.0629
+}

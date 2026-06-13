@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "L1-Wavelet CS (lambda=5e-5, 100 iter, radial NUFFT)",
+      "ncc_vs_ref": 0.9887,
+      "nrmse_vs_ref": 0.037
+    }
+  ],
+  "ncc_boundary": 0.8899,
+  "nrmse_boundary": 0.0407
+}

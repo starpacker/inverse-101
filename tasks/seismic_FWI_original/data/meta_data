@@ -1,0 +1,55 @@
+{
+  "model": "Marmousi (Bourgeois et al., 1991)",
+  "preprocessing": {
+    "original_shape": [2301, 751],
+    "original_spacing_m": 4.0,
+    "subsampling_factor": 5,
+    "smoothing_sigma": 5,
+    "reduced_shape": [461, 151],
+    "dx_m": 20.0,
+    "dz_m": 20.0
+  },
+  "velocity": {
+    "v_true_min_m_s": 1500.0,
+    "v_true_max_m_s": 5500.0,
+    "v_init_min_m_s": 1719.0,
+    "v_init_max_m_s": 3967.0,
+    "units": "m/s"
+  },
+  "acquisition": {
+    "n_shots": 10,
+    "n_sources_per_shot": 1,
+    "n_receivers_per_shot": 93,
+    "source_depth_grid": 1,
+    "receiver_depth_grid": 1,
+    "source_depth_m": 20.0,
+    "receiver_depth_m": 20.0
+  },
+  "wavelet": {
+    "type": "Ricker",
+    "frequency_hz": 5.0,
+    "peak_time_s": 0.3
+  },
+  "time": {
+    "nt": 1350,
+    "dt_s": 0.004,
+    "total_time_s": 5.4
+  },
+  "inversion": {
+    "optimizer": "Adam",
+    "lr": 100.0,
+    "lr_milestones": [75, 300],
+    "lr_gamma": 0.5,
+    "n_epochs": 800,
+    "gradient_smoothing_sigma": 1.0,
+    "gradient_clip_percentile": 0.98,
+    "v_min_bound_m_s": 1480.0,
+    "v_max_bound_m_s": 5800.0,
+    "n_taper": 5
+  },
+  "reference": {
+    "github": "https://github.com/louise-nsangou/fwi-marmousi-deepwave",
+    "marmousi_source": "https://www.geoazur.fr/WIND/pub/nfs/FWI-DATA/GEOMODELS/Marmousi/vp.bin",
+    "deepwave": "https://doi.org/10.5281/zenodo.3829886"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "cgrad (5 rounds x 4 iter)",
+      "ncc_vs_ref": 0.2927,
+      "nrmse_vs_ref": 0.0172
+    }
+  ],
+  "ncc_boundary": 0.2634,
+  "nrmse_boundary": 0.0189
+}

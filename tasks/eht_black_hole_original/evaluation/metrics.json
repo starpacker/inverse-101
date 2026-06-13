@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "Closure-only (corrupted)",
+      "ncc": 0.604,
+      "nrmse": 0.138
+    }
+  ],
+  "ncc_boundary": 0.544,
+  "nrmse_boundary": 0.152
+}

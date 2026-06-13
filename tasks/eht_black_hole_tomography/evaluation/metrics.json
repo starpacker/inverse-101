@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "BH-NeRF",
+      "ncc": 0.9998,
+      "nrmse": 0.00055
+    }
+  ],
+  "ncc_boundary": 0.900,
+  "nrmse_boundary": 0.001
+}

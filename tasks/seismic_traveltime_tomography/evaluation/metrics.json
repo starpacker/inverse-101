@@ -1,0 +1,17 @@
+{
+  "baseline": [
+    {
+      "method": "ATT: ray back-projection, 80 iterations, step_size=0.02, step_decay=0.97, KD normalization zeta=0.5, Gaussian smoothing sigma=4.0 grid cells",
+      "ncc_vs_ref": 1.0,
+      "nrmse_vs_ref": 0.0,
+      "ncc_perturbation_vs_truth": 0.9558,
+      "nrmse_perturbation_vs_truth": 0.0730,
+      "misfit_reduction": 3.4
+    }
+  ],
+  "ncc_boundary": 0.86,
+  "nrmse_boundary": 0.08,
+  "nrmse_definition": "RMS(delta_v_agent - delta_v_ref) / (max(delta_v_ref) - min(delta_v_ref)), where delta_v = v_inv - v_background is the velocity perturbation relative to the linear background model",
+  "output_format": "Agents must save the velocity perturbation (v_inv - v_background) under key 'velocity_perturbation' with shape (1, Nz, Nx) in output/velocity_reconstructed.npz. The background model is the linear gradient v(z) = v0 + (v1 - v0) * z / z_max as defined in meta_data.json.",
+  "notes": "ncc_vs_ref and nrmse_vs_ref compare the agent output perturbation against the baseline reference perturbation (evaluation/reference_outputs/baseline_reference.npz, key: velocity_perturbation). ncc_boundary = 0.9 * baseline_ncc = 0.9 * 0.9558 ≈ 0.86. nrmse_boundary = 1.1 * baseline_nrmse = 1.1 * 0.0730 ≈ 0.08. Domain: 220 km x 50 km, 111 x 26 grid nodes, 2 km spacing. True model: elliptical Gaussian ±5% blobs (sigma_x≈16.5km, sigma_z≈7.5km, aspect ratio 2.2:1) on linear gradient v(z)=6-8 km/s (continental crust to Moho). 8 surface receivers, 1000 random 2D sources with upper-left density bias."
+}

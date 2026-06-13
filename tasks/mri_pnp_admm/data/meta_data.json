@@ -1,0 +1,9 @@
+{
+  "image_shape": [256, 256],
+  "n_masks": 3,
+  "mask_names": ["random", "radial", "cartesian"],
+  "primary_mask": "random",
+  "sampling_rate_percent": 30,
+  "image_source": "Brain.jpg from Provable_Plug_and_Play demo",
+  "image_dtype": "float64 in [0, 1]"
+}

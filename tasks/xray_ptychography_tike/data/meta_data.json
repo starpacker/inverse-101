@@ -1,0 +1,29 @@
+{
+  "n_positions": 516,
+  "probe_shape": [
+    1,
+    1,
+    1,
+    128,
+    128
+  ],
+  "diffraction_shape": [
+    128,
+    128
+  ],
+  "scan_range_pixels": [
+    [
+      -164.3380584716797,
+      167.5796356201172
+    ],
+    [
+      -164.39053344726562,
+      164.50201416015625
+    ]
+  ],
+  "data_min": 0.0,
+  "data_max": 963.0,
+  "data_dtype": "float32",
+  "probe_dtype": "complex64",
+  "description": "Pre-processed Siemens star X-ray ptychography dataset from the Velociprobe instrument at APS."
+}

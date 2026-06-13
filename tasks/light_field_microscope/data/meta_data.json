@@ -1,0 +1,71 @@
+{
+  "task_name": "light_field_microscope",
+  "description": "Wave-optics light-field volume reconstruction of a defocused line-pair target using 3D Richardson-Lucy deconvolution, with thickness-1 benchmark cases and a five-slice volume demo.",
+  "microscope": {
+    "M": 20,
+    "NA": 0.5,
+    "ftl": 165000,
+    "n": 1.0,
+    "WaveLength": 0.525,
+    "comment": "Compact plenoptic-1 fluorescence microscope matching the synthetic wave-model benchmark."
+  },
+  "mla": {
+    "lensPitch": 150,
+    "fm": 3000,
+    "pixelPitch": 6.5,
+    "gridType": "reg",
+    "focus": "single",
+    "uLensMask": 1,
+    "plenoptic": 1,
+    "n_lenslets": 15,
+    "comment": "Regular square microlens array. The effective crop used in the task is enlarged by usaf_data.fieldOfViewScale."
+  },
+  "reconstruction": {
+    "depthStep": 10,
+    "newSpacingPx": 15,
+    "comment": "Wave-model sampling parameters. The benchmark cases use singleton depth grids so that each observation corresponds to a thickness-1 volume aligned with the sample depth. Solver parameters (RL iterations, theta samples, kernel tolerance) are hardcoded in main.py."
+  },
+  "usaf_data": {
+    "targetDepthsUm": [
+      0,
+      -30,
+      -50,
+      -70
+    ],
+    "linePairsPerMM": 64,
+    "supportSizeUm": 80,
+    "fieldOfViewScale": 2.0,
+    "perpendicularShiftLensletPitch": 0.5,
+    "background": 0.0,
+    "poissonScale": 1000,
+    "profileMarginVox": 10,
+    "comment": "Planar line-pair validation derived from the USAF target experiment in Broxton et al. The physical inverse problem remains 3D volume reconstruction; the benchmark simply occupies one slice of the volume per case."
+  },
+  "volume_demo": {
+    "depthRangeUm": [
+      -100,
+      0
+    ],
+    "depthStepUm": 25,
+    "targetDepthUm": -50,
+    "linePairsPerMM": 64,
+    "supportSizeUm": 80,
+    "fieldOfViewScale": 2.0,
+    "perpendicularShiftLensletPitch": 0.5,
+    "background": 0.0,
+    "poissonScale": 1000,
+    "comment": "Generalized volume-reconstruction demonstration. One planar target is placed at -50 um and reconstructed on the five-slice depth grid [-100, -75, -50, -25, 0] um."
+  },
+  "units": {
+    "lengths": "micrometers (um) unless noted",
+    "angles": "radians",
+    "wavelength": "micrometers (um)"
+  },
+  "reference": {
+    "paper": "M. Broxton, L. Grosenick, S. Yang, N. Cohen, A. Andalman, K. Deisseroth, M. Levoy, Wave optics theory and 3-D deconvolution for the light field microscope, Optics Express 21(21):25418, 2013",
+    "doi": "10.1364/OE.21.025418",
+    "local_pdf": "Wave optics theory and 3-D deconvolution for t.pdf",
+    "background_reference": "M. Levoy, Z. Zhang, I. McDowall, Recording and controlling the 4D light field in a microscope using microlens arrays, Journal of Microscopy 235(2):144-162, 2009",
+    "implementation_reference_note": "See reference_website_github.md for the external wave-optics light-field implementation lineage used to build this cleaned benchmark."
+  }
+}

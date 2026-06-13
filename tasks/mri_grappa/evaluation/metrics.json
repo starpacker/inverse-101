@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "GRAPPA (R=2, 20-line ACS, 5x5 kernel, lambda=0.01, 8 coils)",
+      "ncc_vs_ref": 0.9999,
+      "nrmse_vs_ref": 0.0041
+    }
+  ],
+  "ncc_boundary": 0.8999,
+  "nrmse_boundary": 0.0045
+}

@@ -1,0 +1,22 @@
+{
+  "spatial_shape": [
+    40,
+    40,
+    10
+  ],
+  "n_spectral_points": 1600,
+  "spectral_range_cm1": [
+    -136.34541820111627,
+    3670.554950489991
+  ],
+  "fingerprint_region_cm1": [
+    700,
+    1800
+  ],
+  "pixel_size_um": 1.0,
+  "z_step_um": 1.0,
+  "laser_excitation_nm": 532,
+  "cell_type": "THP-1",
+  "n_endmembers": 5,
+  "source": "Kallepitis et al., Nat Commun 8, 14843 (2017)"
+}

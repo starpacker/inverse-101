@@ -1,0 +1,21 @@
+{
+  "baseline": [
+    {
+      "method": "Unweighted TV (low-dose, I0=1000)",
+      "ncc_vs_ref": 0.9533,
+      "nrmse_vs_ref": 0.1485
+    },
+    {
+      "method": "PWLS-TV (low-dose, I0=1000)",
+      "ncc_vs_ref": 0.9854,
+      "nrmse_vs_ref": 0.0851
+    },
+    {
+      "method": "PWLS-TV (high-dose, I0=50000)",
+      "ncc_vs_ref": 0.9866,
+      "nrmse_vs_ref": 0.0799
+    }
+  ],
+  "ncc_boundary": 0.8868,
+  "nrmse_boundary": 0.0936
+}

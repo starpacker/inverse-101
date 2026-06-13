@@ -1,0 +1,11 @@
+{
+  "image_size": 256,
+  "n_angles_full": 180,
+  "n_angles_sparse": 30,
+  "angle_step_sparse": 6,
+  "noise_std": 0.02,
+  "n_detectors": 256,
+  "angle_range_deg": 180.0,
+  "pixel_size_mm": 1.0,
+  "seed": 42
+}

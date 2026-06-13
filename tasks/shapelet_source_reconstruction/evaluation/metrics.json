@@ -1,0 +1,18 @@
+{
+  "baseline": [
+    {
+      "method": "WLS shapelet reconstruction through lensing (n_max=20, beta=0.15, 5x supersampling)",
+      "ncc_vs_ref": 0.9552,
+      "nrmse_vs_ref": 0.0540,
+      "chi2_reduced": 0.9912
+    },
+    {
+      "method": "WLS shapelet deconvolution without lensing (n_max=20, beta=0.3, 5x supersampling)",
+      "ncc_vs_ref": 0.7428,
+      "nrmse_vs_ref": 0.2094,
+      "chi2_reduced": 0.9963
+    }
+  ],
+  "ncc_boundary": 0.8597,
+  "nrmse_boundary": 0.0594
+}

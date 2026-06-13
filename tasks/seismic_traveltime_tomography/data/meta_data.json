@@ -1,0 +1,15 @@
+{
+  "Nx": 111,
+  "Nz": 26,
+  "dx_km": 2.0,
+  "dz_km": 2.0,
+  "x_min_km": 0.0,
+  "x_max_km": 220.0,
+  "z_min_km": 0.0,
+  "z_max_km": 50.0,
+  "v0_km_s": 6.0,
+  "v1_km_s": 8.0,
+  "n_sources": 1000,
+  "n_receivers": 8,
+  "noise_std_s": 0.1
+}

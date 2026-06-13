@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "End-to-End VarNet (12 cascades, 4x equispaced, knee multicoil)",
+      "ncc_vs_ref": 0.9994,
+      "nrmse_vs_ref": 0.0127
+    }
+  ],
+  "ncc_boundary": 0.8995,
+  "nrmse_boundary": 0.0140
+}

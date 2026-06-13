@@ -1,0 +1,24 @@
+{
+  "baseline": [
+    {
+      "method": "Tensor-Var 4D-Var (deep kernel feature space, identity Q/R/B fallback)",
+      "channels": ["geopotential", "temperature", "humidity", "wind_u", "wind_v"],
+      "ncc_per_channel": [0.999914, 0.999816, 0.99878, 0.999325, 0.999206],
+      "nrmse_per_channel": [0.012946, 0.017276, 0.022135, 0.026849, 0.029044],
+      "weighted_nrmse_per_channel": [0.008721, 0.012674, 0.04496, 0.032877, 0.032603],
+      "ncc": 0.999408,
+      "nrmse": 0.02165,
+      "weighted_nrmse": 0.026367
+    }
+  ],
+  "ncc_boundary": 0.8995,
+  "nrmse_boundary": 0.0238,
+  "weighted_nrmse_boundary": 0.029,
+  "weighted_nrmse_geopotential_boundary": 0.0096,
+  "weighted_nrmse_temperature_boundary": 0.0139,
+  "weighted_nrmse_humidity_boundary": 0.0495,
+  "weighted_nrmse_wind_u_boundary": 0.0362,
+  "weighted_nrmse_wind_v_boundary": 0.0359,
+  "nrmse_definition": "RMS error between estimate and reference normalised by the dynamic range (max - min) of the reference, computed independently per channel.",
+  "weighted_nrmse_definition": "For each channel c and timestep t, weighted_nrmse[t,c] = ||(est - true) * lat_weight||_2 / ||true * lat_weight||_2 where lat_weight is the cosine-latitude weighting matrix shipped in raw_data.npz. The reported per-channel value is the mean over the assimilation window."
+}

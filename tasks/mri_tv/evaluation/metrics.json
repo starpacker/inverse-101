@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "CS-MRI Total Variation (lambda=1e-4)",
+      "ncc_vs_ref": 0.9617,
+      "nrmse_vs_ref": 0.0477
+    }
+  ],
+  "ncc_boundary": 0.8655,
+  "nrmse_boundary": 0.0525
+}

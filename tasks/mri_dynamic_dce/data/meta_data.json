@@ -1,0 +1,13 @@
+{
+  "image_size": 128,
+  "num_frames": 20,
+  "sampling_rate": 0.15,
+  "center_fraction": 0.08,
+  "noise_level": 0.005,
+  "time_range_seconds": [
+    0.0,
+    60.0
+  ],
+  "modality": "DCE-MRI",
+  "description": "Synthetic dynamic contrast-enhanced MRI with variable-density Cartesian undersampling"
+}

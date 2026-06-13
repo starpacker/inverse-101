@@ -1,0 +1,21 @@
+{
+  "baseline": [
+    {
+      "method": "Back-Projection (BP) — difference reconstruction on 16-electrode adjacent-drive mesh",
+      "ncc_vs_ref": 0.5575,
+      "nrmse_vs_ref": 0.5403
+    },
+    {
+      "method": "GREIT — linear one-step reconstruction to 32x32 pixel grid",
+      "ncc_vs_ref": 0.5936,
+      "nrmse_vs_ref": 0.0901
+    },
+    {
+      "method": "JAC Dynamic — Tikhonov-regularized Jacobian inversion with Kotre prior (dist_exc=8)",
+      "ncc_vs_ref": 0.6092,
+      "nrmse_vs_ref": 0.1079
+    }
+  ],
+  "ncc_boundary": 0.5018,
+  "nrmse_boundary": 0.5943
+}

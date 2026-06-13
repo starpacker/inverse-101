@@ -1,0 +1,11 @@
+{
+  "baseline": [
+    {
+      "method": "Ptychography (10 iter, gradient descent)",
+      "ncc_vs_ref": 1.0,
+      "nrmse_vs_ref": 0.0
+    }
+  ],
+  "ncc_boundary": 0.9,
+  "nrmse_boundary": 0.15
+}

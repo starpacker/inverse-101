@@ -1,0 +1,30 @@
+{
+  "modality": "TIRF fluorescence microscopy",
+  "structure": "Microtubule (filamentous)",
+  "n_frames": 55,
+  "image_height": 502,
+  "image_width": 502,
+  "pixel_size_um": 0.0313,
+  "excitation_wavelength_nm": 488,
+  "emission_wavelength_nm": 525,
+  "na": 1.3,
+  "camera": "sCMOS (Hamamatsu Orca Flash 4.0 v3)",
+  "background_adu": 100,
+  "avg_signal_above_bg_adu": 8.714454650878906,
+  "noise_model": {
+    "description": "Poisson-Gaussian: sigma^2 = beta1*H(y-bg) + beta2",
+    "beta1_estimated": 0.7494,
+    "beta2_estimated": 3.7135,
+    "beta1_theoretical_optimal": 1.0,
+    "alpha_recorruption": 1.5,
+    "filter_size": 5
+  },
+  "psf": {
+    "file": "psf_emLambda525_dxy0.0313_NA1.3.tif",
+    "pixel_size_um": 0.0313,
+    "kernel_size": 32,
+    "description": "2D PSF for Microtubule channel (525 nm emission, NA 1.3)"
+  },
+  "source": "Zenodo DOI: 10.5281/zenodo.7261163",
+  "paper": "Qiao et al., Nature Communications 15, 4180 (2024)"
+}

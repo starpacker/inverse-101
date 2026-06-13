@@ -1,0 +1,10 @@
+{
+  "n_projections": 181,
+  "n_sinograms": 2,
+  "n_detector_pixels": 640,
+  "n_flat_fields": 10,
+  "n_dark_fields": 10,
+  "theta_min_rad": 0.0,
+  "theta_max_rad": 3.124235788100347,
+  "modality": "x-ray_transmission_ct"
+}

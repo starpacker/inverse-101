@@ -1,0 +1,27 @@
+{
+  "sensor": "HQ Camera Module (Sony IMX477)",
+  "sensor_size_mm": [
+    6.287,
+    4.712
+  ],
+  "pixel_size_um": 1.55,
+  "sensor_resolution": [
+    3040,
+    4056
+  ],
+  "downsample_factor": 4,
+  "downsampled_resolution": [
+    760,
+    1014
+  ],
+  "diffuser": "Scotch tape (double-sided)",
+  "object_distance_cm": 40.0,
+  "n_channels": 3,
+  "channels": [
+    "R",
+    "G",
+    "B"
+  ],
+  "dtype": "float32",
+  "normalization": "min-max per channel (raw uint8 / 255, then subtract min, divide by max)"
+}
