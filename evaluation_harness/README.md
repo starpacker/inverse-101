@@ -12,10 +12,27 @@ python -m evaluation_harness run --model MODEL --task TASK --mechanism MECHANISM
 
 ```bash
 python -m pip install -r evaluation_harness/requirements.txt
+python scripts/download_assets.py --task ct_fan_beam
 docker build -t imaging101-sandbox -f evaluation_harness/Dockerfile .
 ```
 
 Docker is recommended. Without Docker, the harness uses a local temporary workspace.
+
+## Task Assets
+
+Large task assets are stored on Hugging Face instead of GitHub. Restore one task before evaluation:
+
+```bash
+python scripts/download_assets.py --task ct_fan_beam
+```
+
+Restore all task assets:
+
+```bash
+python scripts/download_assets.py --all
+```
+
+`assets_manifest.json` records each asset path, size, and SHA-256 hash. The downloader preserves the original `tasks/...` paths and verifies downloaded files.
 
 ## Task Environments
 

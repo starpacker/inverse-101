@@ -8,6 +8,7 @@ This guide shows how to run one model on one task with one evaluation mechanism.
 git clone https://github.com/starpacker/inverse-101.git
 cd inverse-101
 python -m pip install -r evaluation_harness/requirements.txt
+python scripts/download_assets.py --task ct_fan_beam
 ```
 
 Set credentials for an OpenAI-compatible endpoint:
@@ -35,6 +36,24 @@ python -m evaluation_harness run \
   --model demo \
   --dry-run
 ```
+
+## Task Assets
+
+GitHub stores the task code and lightweight metadata. Large arrays, fixtures, and reference outputs live on Hugging Face at `starpacker52/imaging-101` and are indexed by `assets_manifest.json`.
+
+Download one task before running it:
+
+```bash
+python scripts/download_assets.py --task ct_fan_beam
+```
+
+Download every task asset:
+
+```bash
+python scripts/download_assets.py --all
+```
+
+The downloader writes files back into the expected `tasks/<task>/data/`, `tasks/<task>/evaluation/fixtures/`, and `tasks/<task>/evaluation/reference_outputs/` directories and verifies SHA-256 hashes.
 
 ## Environment Preflight
 

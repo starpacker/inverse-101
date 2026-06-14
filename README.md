@@ -52,6 +52,7 @@ python -m evaluation_harness run \
 git clone https://github.com/starpacker/inverse-101.git
 cd inverse-101
 python -m pip install -r evaluation_harness/requirements.txt
+python scripts/download_assets.py --task ct_fan_beam
 ```
 
 Set an OpenAI-compatible endpoint:
@@ -166,7 +167,21 @@ End-to-end levels:
 
 ## Data And Fixtures
 
-The repository is designed to keep code, task definitions, and lightweight metadata in Git. Large task arrays and fixtures may be distributed separately. If a task run reports missing `.npz`, `.npy`, or fixture files, download the dataset snapshot used by your evaluation or copy those assets into the matching `tasks/<task_name>/data/` and `tasks/<task_name>/evaluation/` paths.
+The repository keeps code, task definitions, and lightweight metadata in GitHub. Large task arrays, fixtures, and reference outputs are stored on Hugging Face at [starpacker52/imaging-101](https://huggingface.co/datasets/starpacker52/imaging-101/tree/main/tasks) and tracked by `assets_manifest.json`.
+
+Download assets for one task:
+
+```bash
+python scripts/download_assets.py --task ct_fan_beam
+```
+
+Download the full benchmark asset set:
+
+```bash
+python scripts/download_assets.py --all
+```
+
+The downloader restores files into the matching `tasks/<task_name>/data/`, `tasks/<task_name>/evaluation/fixtures/`, and `tasks/<task_name>/evaluation/reference_outputs/` paths, then verifies SHA-256 hashes from the manifest.
 
 ## Repository Layout
 
@@ -176,6 +191,7 @@ inverse-101/
   evaluation_harness/    CLI, agents, sandbox runners, scorers
   docs/                  evaluation and contribution guides
   scripts/               batch runners and analysis utilities
+  assets_manifest.json   Hugging Face asset index with size and SHA-256 hashes
   config_llm.yaml        example model endpoint configuration
 ```
 
