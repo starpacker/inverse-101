@@ -25,7 +25,12 @@ from typing import Optional
 
 import numpy as np
 
-from evaluation_harness.scorer import EvalResult
+from evaluation_harness.scorer import (
+    EvalResult,
+    _prepare_metric_array,
+    compute_quality_metrics_from_arrays,
+    load_reference_array,
+)
 
 log = logging.getLogger(__name__)
 
@@ -110,61 +115,27 @@ def _collect_files(workspace_path: Path) -> list[str]:
 
 
 def _compute_quality_metrics(workspace_path: Path, task_dir: Path) -> dict:
-    """Compare reconstruction against ground truth.
+    """Compare reconstruction against the task reference array.
 
     Uses the same metric computation as scorer.py for consistency.
     """
     recon_path = workspace_path / "output" / "reconstruction.npy"
-    gt_path = task_dir / "evaluation" / "reference_outputs" / "ground_truth.npy"
 
     if not recon_path.exists():
         return {"error": "output/reconstruction.npy not found"}
-
-    if not gt_path.exists():
-        return {"error": "ground_truth.npy not found in task directory"}
 
     try:
         out = np.load(str(recon_path), allow_pickle=True)
     except Exception as e:
         return {"error": f"Failed to load reconstruction: {e}"}
 
-    if out.dtype == object:
-        return {"error": "Reconstruction is not a valid numeric array"}
+    try:
+        out = _prepare_metric_array(out, label="reconstruction")
+        gt, _ = load_reference_array(task_dir, target_shape=out.shape)
+    except Exception as e:
+        return {"error": str(e)}
 
-    out = out.astype(np.float64)
-    if out.ndim != 2:
-        return {"error": f"Reconstruction has wrong dimensions: {out.ndim} (expected 2)"}
-
-    gt = np.load(str(gt_path)).astype(np.float64)
-
-    if out.shape != gt.shape:
-        return {
-            "error": f"Shape mismatch: reconstruction {out.shape} vs expected {gt.shape}",
-            "expected_shape": list(gt.shape),
-        }
-
-    # Flux-normalize
-    out = out * (gt.sum() / (out.sum() + 1e-30))
-
-    # NRMSE
-    nrmse = float(np.linalg.norm(out - gt) / (np.linalg.norm(gt) + 1e-30))
-    # NCC
-    ncc = float(np.sum(out * gt) / (np.linalg.norm(out) * np.linalg.norm(gt) + 1e-30))
-    # MSE
-    mse = float(np.mean((out - gt) ** 2))
-    # PSNR
-    max_val = float(gt.max())
-    psnr = float(20 * np.log10(max_val / np.sqrt(mse))) if mse > 0 else float("inf")
-    # SSIM
-    ssim = _ssim_2d(out, gt, data_range=max_val)
-
-    return {
-        "nrmse": round(nrmse, 6),
-        "ncc": round(ncc, 6),
-        "mse": round(mse, 10),
-        "psnr": round(psnr, 2),
-        "ssim": round(ssim, 6),
-    }
+    return compute_quality_metrics_from_arrays(out, gt)
 
 
 def _ssim_2d(a: np.ndarray, b: np.ndarray, data_range: float) -> float:
@@ -191,16 +162,14 @@ def _generate_visualizations(
     from evaluation_harness.visualizer import generate_eval_figures
 
     recon_path = workspace_path / "output" / "reconstruction.npy"
-    gt_path = task_dir / "evaluation" / "reference_outputs" / "ground_truth.npy"
-
-    if not recon_path.exists() or not gt_path.exists():
+    if not recon_path.exists():
         return {}
 
     try:
-        recon = np.load(str(recon_path), allow_pickle=True)
-        if recon.dtype == object or recon.ndim != 2:
+        recon = _prepare_metric_array(np.load(str(recon_path), allow_pickle=True), label="reconstruction")
+        gt, _ = load_reference_array(task_dir, target_shape=recon.shape)
+        if recon.ndim != 2 or gt.ndim != 2:
             return {}
-        gt = np.load(str(gt_path))
     except Exception as e:
         log.warning("Failed to load arrays for visualization: %s", e)
         return {}

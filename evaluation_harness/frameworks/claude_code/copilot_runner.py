@@ -37,6 +37,8 @@ from typing import Optional
 
 import numpy as np
 
+from evaluation_harness.scorer import load_reference_array
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -448,8 +450,10 @@ class CopilotSandbox:
 
     def _place_self_eval_script(self) -> None:
         """Generate self_eval.py with obfuscated ground truth."""
-        gt_path = self.task_dir / "evaluation" / "reference_outputs" / "ground_truth.npy"
-        if not gt_path.exists():
+        try:
+            gt, gt_path = load_reference_array(self.task_dir)
+        except Exception as exc:
+            gt_path = exc
             log.warning("Ground truth not found: %s — self-eval will not work", gt_path)
             # Place a stub self_eval.py
             script = '''\
@@ -460,7 +464,6 @@ print("ERROR: Ground truth not available. Cannot compute metrics.")
             (self.workspace / "self_eval.py").write_text(script, encoding="utf-8")
             return
 
-        gt = np.load(str(gt_path))
         gt_blob = _obfuscate_array(gt)
         gt_hash = hashlib.sha256(gt.tobytes()).hexdigest()[:16]
 
